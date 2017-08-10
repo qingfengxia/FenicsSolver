@@ -35,7 +35,7 @@ class SolverBase():
             raise SolverError('case setup data must be a python dict')
 
     def load_settings(self, s):
-        #
+        ## mesh
         self.degree = 1
         if s['mesh'] and s['function_space'] ==None:
             if isinstance(s['mesh'], (str)):
@@ -57,6 +57,7 @@ class SolverBase():
             self.boundary_facets = MeshFunction("size_t", self.mesh, s['boundary_file'])  # fname+"_facet_region.xml"
         else:
             self.generate_boundary_facets()
+        ## 
         if 'body_source' in s and s['body_source']:
             self.body_source = self.translate_value(s['body_source'])
         else:
@@ -70,7 +71,9 @@ class SolverBase():
         self.material = s['material']
         
         ## solver setting, transient settings
+        self.solver_settings = s['solver_settings']
         self.transient_settings = s['solver_settings']['transient_settings']
+        self.transient = self.transient_settings['transient']
         """
         ts = s['solver_settings']['transient_settings']
         self.transient = ts['transient']
