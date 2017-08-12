@@ -1,3 +1,25 @@
+# ***************************************************************************
+# *                                                                         *
+# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia eng ox ac uk>                 *       *
+# *                                                                         *
+# *   This program is free software; you can redistribute it and/or modify  *
+# *   it under the terms of the GNU Lesser General Public License (LGPL)    *
+# *   as published by the Free Software Foundation; either version 2 of     *
+# *   the License, or (at your option) any later version.                   *
+# *   for detail see the LICENCE text file.                                 *
+# *                                                                         *
+# *   This program is distributed in the hope that it will be useful,       *
+# *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+# *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+# *   GNU Library General Public License for more details.                  *
+# *                                                                         *
+# *   You should have received a copy of the GNU Library General Public     *
+# *   License along with this program; if not, write to the Free Software   *
+# *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  *
+# *   USA                                                                   *
+# *                                                                         *
+# ***************************************************************************
+
 from __future__ import print_function, division
 #import math may cause error
 import numbers
@@ -7,19 +29,6 @@ import os.path
 from dolfin import *
 
 #Oasis: a high-level/high-performance open source Navier-Stokes solve
-
-if dolfin.MPI.size(dolfin.mpi_comm_world())>1:
-    using_MPI = True
-else:
-    using_MPI = False
-# Define a dolfin parameters
-parameters["linear_algebra_backend"] = "PETSc"  #UMFPACK: out of memory, PETSc divergent
-#parameters["linear_algebra_backend"] = "Eigen"  # 'uBLAS' is not supported any longer
-
-parameters["mesh_partitioner"] = "SCOTCH"
-#parameters["form_compiler"]["representation"] = "quadrature"
-parameters["form_compiler"]["optimize"] = True
-
 
 """
 TODO:
@@ -36,10 +45,7 @@ class CoupledNavierStokesSolver(SolverBase):
 
         SolverBase.__init__(self, case_input)
 
-        #self.bcs_pressure = case_input['pressure_boundary_conditions']
-        #self.bcs_velocity = case_input['pressure_boundary_conditions']
-
-        if case_input['body_source']:  # FIXME: source term type, centrifugal force is possible
+        if 'body_source' in case_input and case_input['body_source']:  # FIXME: source term type, centrifugal force is possible
             self.body_force = self.translate_value(case_input['body_source'])
         else:
             if self.dimension == 2: 
@@ -58,21 +64,12 @@ class CoupledNavierStokesSolver(SolverBase):
         ## Define solver parameters, underreleax, tolerance, max_iter
         self.is_iterative_solver = True
 
-        if using_MPI:
-            self.solver_settings['linear_solver'] = 'bicgstab'  # "gmres" # not usable in MPI
-            self.solver_settings['preconditioner']= "hypre_euclid"
-        else:
-            self.solver_settings['linear_solver'] = 'default'  # 
-            self.solver_settings['preconditioner'] = "default"  # 'default', ilu only works in serial
-
-    def generate_function_space(self, mesh, periodic_boundary):
+    def generate_function_space(self, periodic_boundary):
         self.vel_degree = 2
 
-        self.mesh = mesh
         V = VectorElement("CG", self.mesh.ufl_cell(), self.vel_degree)  # degree 2, must be higher than pressure
         Q = FiniteElement("CG", self.mesh.ufl_cell(), 1)
-        #temperature
-        #T = FiniteElement("CG", self.mesh.ufl_cell(), 1)
+        #T = FiniteElement("CG", self.mesh.ufl_cell(), 1)  # temperature subspace
         #mixed_element = [V, Q]  # MixedFunctionSpace has been removed from 2016.2
         if periodic_boundary:
             self.function_space = FunctionSpace(self.mesh, V * Q, constrained_domain=periodic_boundary)  # new API
@@ -103,23 +100,23 @@ class CoupledNavierStokesSolver(SolverBase):
             solver_type = 'mumps', form_compilder_parameters = {'cpp_optimize':  True, "representation": 'quadrature', "quadrature_degree": 2})
 
     def viscosity(self):
+        _nu = self.material['kinematic_viscosity']
+        if isinstance(_nu, (Constant, numbers.Number)):
+            nu = Constant(_nu)
+        #else:  #if nu is nu is string or function
         #def viscosity_function(u, p):
-        #    return Constant(1)*pow(p/Constant(self.reference_values['pressure']), 2)
-        return self.material['kinetic_viscosity']  # nonlinear, nonNewtonian
+        #   return Constant(1)*pow(p/Constant(self.reference_values['pressure']), 2)
+        #   _nu = viscosity(u, p)
+        return _nu  # nonlinear, nonNewtonian
 
     def update_boundary_conditions(self, time_iter_, up_0, up_prev):
         W = self.function_space
-        boundary_facets = FacetFunction('size_t', W.mesh())
-        boundary_facets.set_all(0)
         ## boundary setup and update for each time step
         n = FacetNormal(self.mesh)  # used in pressure force
 
-        ## boundary conditions applying
-        for key, bc in self.boundary_conditions.items():  # not checked
-            bc['boundary'].mark(boundary_facets, bc['boundary_id'])
-        ds = Measure("ds", subdomain_data=boundary_facets)
+        ds = Measure("ds", subdomain_data=self.boundary_facets)
         if time_iter_ == 0:
-            plot(boundary_facets, title ="boundary colored by ID")  # diff color do visual diff boundary 
+            plot(self.boundary_facets, title ="boundary colored by ID")  # diff color do visual diff boundary 
 
         # Define unknown and test function(s)
         v, q = TestFunctions(W)
@@ -140,7 +137,7 @@ class CoupledNavierStokesSolver(SolverBase):
             if bc['variable'] == 'velocity':
                 bvalue = self.get_boundary_value(bc, time_iter_)
                 if bc['type'] == 'Dirichlet':
-                    Dirichlet_bcs_up.append(DirichletBC(W.sub(0), bvalue, boundary_facets, bc['boundary_id']) )
+                    Dirichlet_bcs_up.append(DirichletBC(W.sub(0), bvalue, self.boundary_facets, bc['boundary_id']) )
                 elif bc['type'] == 'Neumann':  # zero gradient, outflow
                     pass # FIXME
                 else:
@@ -150,7 +147,7 @@ class CoupledNavierStokesSolver(SolverBase):
             if bc['variable'] == 'pressure':
                 bvalue = self.get_boundary_value(bc, time_iter_)
                 if bc['type'] == 'Dirichlet':  # pressure  inlet or outlet
-                    Dirichlet_bcs_up.append(DirichletBC(W.sub(1), bvalue, boundary_facets, bc['boundary_id']) )
+                    Dirichlet_bcs_up.append(DirichletBC(W.sub(1), bvalue, self.boundary_facets, bc['boundary_id']) )
                     #  viscous force on pressure boundary?
                     F += inner(bvalue*n, v)*ds(bc['boundary_id'])  # very import to make sure convergence
                     F -= self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(bc['boundary_id'])  #  why 
@@ -166,11 +163,7 @@ class CoupledNavierStokesSolver(SolverBase):
             """Return the symmetric gradient."""
             return 0.5 * (grad(u) + grad(u).T)
 
-        _nu = self.viscosity()
-        if isinstance(_nu, (Constant, numbers.Number)):
-            nu = Constant(_nu)
-        #else:  #if nu is nu is string or function
-        #nu = viscosity(u, p)
+        nu = self.viscosity()
 
         # Define Form for the static Stokes Coupled equation,
         F = nu * 2.0*inner(epsilon(u), epsilon(v))*dx \
@@ -201,6 +194,28 @@ class CoupledNavierStokesSolver(SolverBase):
 
         return up_0
 
+    def set_fenics_parameters(self, solver):
+        # Define a dolfin parameters
+        if dolfin.MPI.size(dolfin.mpi_comm_world())>1:
+            using_MPI = True
+        else:
+            using_MPI = False
+
+        parameters["linear_algebra_backend"] = "PETSc"  #UMFPACK: out of memory, PETSc divergent
+        #parameters["linear_algebra_backend"] = "Eigen"  # 'uBLAS' is not supported any longer
+
+        parameters["mesh_partitioner"] = "SCOTCH"
+        #parameters["form_compiler"]["representation"] = "quadrature"
+        parameters["form_compiler"]["optimize"] = True
+        """
+        if using_MPI:
+            #parameters['linear_solver'] = 'bicgstab'  # "gmres" # not usable in MPI
+            parameters['preconditioner']= "hypre_euclid"
+        else:
+            #parameters['linear_solver'] = 'default'  # is not a parameter for LinearProblemSolver
+            parameters['preconditioner'] = "default"  # 'default', ilu only works in serial
+        """
+
     def solve_static(self, F, up_0, Dirichlet_bcs_up):
         # Solve stationary Navier-Stokes problem with Picard method
         # other methods may be more acurate and faster
@@ -219,16 +234,14 @@ class CoupledNavierStokesSolver(SolverBase):
         timer_solver.start()
         while (iter_ < max_iter and eps > tol):
             # solve the linear stokes flow to avoid up_s = 0
-            #solve(F, up_s, Dirichlet_bcs_up)  #can solve nonline weak form
+            #solve(F, up_s, Dirichlet_bcs_up)  #can solve nonlinear weak form
 
             problem = LinearVariationalProblem(lhs(F), rhs(F), up_s, Dirichlet_bcs_up)
             solver = LinearVariationalSolver(problem)
-
-            solver.parameters["linear_solver"] = 'default'
-            solver.parameters["preconditioner"] = 'default'
-
+            self.set_fenics_parameters(solver)
             solver.solve()
-            
+
+            # other solving methods
             #up_s = self.solve_iteratively(F, Dirichlet_bcs_up, up_s)
             #up_s = self.solve_amg(F, Dirichlet_bcs_up, up_s)  #  AMG is not working with mixed function space
 
@@ -252,4 +265,7 @@ class CoupledNavierStokesSolver(SolverBase):
         return self.result
 
     def plot(self):
-        pass
+        u,p= split(self.result)
+        plot(u)
+        plot(p)
+        interactive()

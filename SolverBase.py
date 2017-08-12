@@ -1,3 +1,25 @@
+# ***************************************************************************
+# *                                                                         *
+# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia eng ox ac uk>                 *       *
+# *                                                                         *
+# *   This program is free software; you can redistribute it and/or modify  *
+# *   it under the terms of the GNU Lesser General Public License (LGPL)    *
+# *   as published by the Free Software Foundation; either version 2 of     *
+# *   the License, or (at your option) any later version.                   *
+# *   for detail see the LICENCE text file.                                 *
+# *                                                                         *
+# *   This program is distributed in the hope that it will be useful,       *
+# *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+# *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+# *   GNU Library General Public License for more details.                  *
+# *                                                                         *
+# *   You should have received a copy of the GNU Library General Public     *
+# *   License along with this program; if not, write to the Free Software   *
+# *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  *
+# *   USA                                                                   *
+# *                                                                         *
+# ***************************************************************************
+
 from __future__ import print_function, division
 #import math may cause error
 import numbers
@@ -20,7 +42,8 @@ default_case_settings = {'solver_name': None,
                     'transient_settings': {'transient': False, 'starting_time': 0, 'time_step': 0.01, 'ending_time': 0.03},
                     'convergence_settings': {'default': 1e-3},
                     'reference_values': {},
-                    }
+                    },
+                "output_settings": {}
                 }
 
 class SolverBase():
@@ -35,28 +58,35 @@ class SolverBase():
             raise SolverError('case setup data must be a python dict')
 
     def load_settings(self, s):
-        ## mesh
+        ## mesh and boundary
+        self.boundary_conditions = s['boundary_conditions']
         self.degree = 1
-        if s['mesh'] and s['function_space'] ==None:
-            if isinstance(s['mesh'], (str)):
-                mesh = self.read_mesh(s['mesh'])
+        if ('mesh' in s) and s['mesh']:
+            if isinstance(s['mesh'], (str, unicode)):
+                self.read_mesh(s['mesh'])
+            elif isinstance(s['mesh'], (Mesh,)):
+                self.mesh = s['mesh']
+                self.generate_boundary_facets()
             else:
-                mesh = s['mesh']
-            self.generate_function_space(mesh, s['periodic_boundary'])
-        elif s['mesh']==None and s['function_space']:
+                raise SolverError('Error: mesh must be file path or Mesh object: {}')
+            if 'periodic_boundary' not in s:  # check: settings file can not store None element?
+                s['periodic_boundary'] = None
+            self.generate_function_space(s['periodic_boundary'])
+        elif ('mesh' not in s or s['mesh']==None) and ('function_space' in s and s['function_space']):
             self.function_space = s['function_space']
             self.mesh = self.function_space.mesh()
+            self.generate_boundary_facets()
         else:
             raise SolverError('mesh or function space must specified to construct solver object')
         self.dimension = self.mesh.geometry().dim()
 
-        ## boundary and body source
-        self.boundary_conditions = s['boundary_conditions']
+        """
         #also read subdomains         #self.subdomains = MeshFunction("size_t", mesh, fname+"_physical_region.xml")
         if 'boundary_file' in s and os.path.exists(s['boundary_file']):
             self.boundary_facets = MeshFunction("size_t", self.mesh, s['boundary_file'])  # fname+"_facet_region.xml"
         else:
             self.generate_boundary_facets()
+        """
         ## 
         if 'body_source' in s and s['body_source']:
             self.body_source = self.translate_value(s['body_source'])
@@ -83,22 +113,34 @@ class SolverBase():
         """
 
     def read_mesh(self, filename):
+        print(filename, type(filename))  # unicode filename NOT working, why?
+        if isinstance(filename, (unicode,)):
+            filename = filename.encode('utf-8')
         if not os.path.exists(filename):
-            raise SolverError('mesh file does not exist, check the file name')
+            raise SolverError('mesh file: {} , does not exist'. format(filename))
         if filename[-5:] == ".xdmf":
             mesh = Mesh()
             f = XDMFFile(mpi_comm_world(), filename)
             f.read(mesh, True)
+            self.generate_boundary_facets()
         elif filename[-4:] == ".xml":
             mesh = Mesh(filename)
+            bmeshfile = filename[:-4] + "_facet_region.xml"
+            if os.path.exists(bmeshfile):
+                self.boundary_facets = MeshFunction("size_t", mesh, bmeshfile)
+            else:
+                print('Boundary facets are not provided by xml input file, boundary will be marked from subdomain instance')
+                self.generate_boundary_facets()  # boundary marking from subdomain instance
+            subdomain_meshfile = filename[:-4] + "_physical_region.xml"
+            if os.path.exists(subdomain_meshfile):
+                self.physical_region = MeshFunction("size_t", mesh, subdomain_meshfile)
         else:
             raise SolverError('mesh or function space must specified to construct solver object')
-        return mesh
+        self.mesh = mesh
 
-    def generate_function_space(self, mesh, periodic_boundary):
+    def generate_function_space(self, periodic_boundary):
         self.degree = 1
         try:
-            self.mesh = mesh
             if periodic_boundary:
                 self.function_space = FunctionSpace(self.mesh, "CG", self.degree, constrained_domain=periodic_boundary)
                 # the group and degree of the FE element.
@@ -119,7 +161,7 @@ class SolverBase():
 
     def translate_value(self, value):
         W = self.function_space
-        if isinstance(value, tuple):
+        if isinstance(value, (tuple, list)):  # json dump tuple into list
             if len(value) >= self.dimension:
                 values_0 = Constant(value)
             else:
@@ -183,7 +225,7 @@ class SolverBase():
         timer_solver_all.start()
         while (t < t_end):
             dt = self.get_time_step(time_iter_)
-            
+
             ## overloaded by derived classes
             F, Dirichlet_bcs_up = self.update_boundary_conditions(time_iter_, up_0, up_prev)
 

@@ -1,3 +1,25 @@
+# ***************************************************************************
+# *                                                                         *
+# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia eng ox ac uk>                 *       *
+# *                                                                         *
+# *   This program is free software; you can redistribute it and/or modify  *
+# *   it under the terms of the GNU Lesser General Public License (LGPL)    *
+# *   as published by the Free Software Foundation; either version 2 of     *
+# *   the License, or (at your option) any later version.                   *
+# *   for detail see the LICENCE text file.                                 *
+# *                                                                         *
+# *   This program is distributed in the hope that it will be useful,       *
+# *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+# *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+# *   GNU Library General Public License for more details.                  *
+# *                                                                         *
+# *   You should have received a copy of the GNU Library General Public     *
+# *   License along with this program; if not, write to the Free Software   *
+# *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  *
+# *   USA                                                                   *
+# *                                                                         *
+# ***************************************************************************
+
 from __future__ import print_function, division
 import math
 import numpy as np
@@ -42,7 +64,7 @@ def test():
     bcs_p = OrderedDict()
     bcs_p["outlet"] = {'boundary': outlet, 'boundary_id': 3, 'variable': "pressure", 'type': 'Dirichlet', 'value': Constant(1e5)}
 
-    fluid = {'name': 'oil', 'kinetic_viscosity': 1e8, 'density': 1.3}
+    fluid = {'name': 'oil', 'kinematic_viscosity': 1e8, 'density': 1.3}
 
     solving_energy_equation = False
     transient = False
@@ -78,8 +100,8 @@ def test():
     if solving_energy_equation:
         from . import  ScalerEquationSolver
         bcs_temperature = {}
-        bcs_u["inlet"] = {'boundary': inlet, 'boundary_id': 2, 'type': 'Dirichlet', 'value': 350}
-        solver_T = ScalerEquationSolver.ScalerEquationSolver(mesh, bcs_temperature)  # need update with new API
+        bcs_temperature["inlet"] = {'boundary': inlet, 'boundary_id': 2, 'type': 'Dirichlet', 'value': 350}
+        solver_T = ScalerEquationSolver.ScalerEquationSolver(mesh, bcs_temperature)  # FIXME: update to new API
         #Q = solver.function_space.sub(1)  # seem it is hard to share vel between. u is vectorFunction
         Q = solver_T.function_space
         cvel = Function(Q)

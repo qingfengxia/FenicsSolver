@@ -1,3 +1,25 @@
+# ***************************************************************************
+# *                                                                         *
+# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia eng ox ac uk>                 *       *
+# *                                                                         *
+# *   This program is free software; you can redistribute it and/or modify  *
+# *   it under the terms of the GNU Lesser General Public License (LGPL)    *
+# *   as published by the Free Software Foundation; either version 2 of     *
+# *   the License, or (at your option) any later version.                   *
+# *   for detail see the LICENCE text file.                                 *
+# *                                                                         *
+# *   This program is distributed in the hope that it will be useful,       *
+# *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+# *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+# *   GNU Library General Public License for more details.                  *
+# *                                                                         *
+# *   You should have received a copy of the GNU Library General Public     *
+# *   License along with this program; if not, write to the Free Software   *
+# *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  *
+# *   USA                                                                   *
+# *                                                                         *
+# ***************************************************************************
+
 from __future__ import print_function, division
 import math
 import collections
@@ -112,16 +134,9 @@ class LinearElasticitySolver(SolverBase):
             thermal_stress = inner(elasticity * grad( T - Constant(self.reference_values['temperature'])) , v)*dx
             integrals_F.append( thermal_stress )
 
-        ## boundary setup
-        boundary_facets = FacetFunction('size_t', self.mesh)
-        boundary_facets.set_all(0)
-        ## surface boundary conditions applying
-        for name, bc in self.boundary_conditions.items():
-            bc['boundary'].mark(boundary_facets, bc['boundary_id'])
-
-        ds= Measure("ds", subdomain_data=boundary_facets)  # if later marking updating in this ds?
+        ds= Measure("ds", subdomain_data=self.boundary_facets)  # if later marking updating in this ds?
         if time_iter_==0:
-            plot(boundary_facets, title = "boundary facets colored by ID")
+            plot(self.boundary_facets, title = "boundary facets colored by ID")
 
         bcs = []
         mesh_normal = FacetNormal(self.mesh)  # n is predefined as normal?
@@ -129,13 +144,13 @@ class LinearElasticitySolver(SolverBase):
             i = bc['boundary_id']
             if bc['type'] =='Dirichlet' or bc['type'] =='displacement':
                 if isinstance(bc['value'], (Expression, Constant)):
-                    dbc = DirichletBC(V, bc['value'], boundary_facets, i)
+                    dbc = DirichletBC(V, bc['value'], self.boundary_facets, i)
                     bcs.append(dbc)
                 else: # transient setting from time_stamp
                     axis_i=0
                     for disp in bc['value']:
                         if disp:
-                            dbc = DirichletBC(V.sub(axis_i), Constant(disp), boundary_facets, i)
+                            dbc = DirichletBC(V.sub(axis_i), Constant(disp), self.boundary_facets, i)
                             bcs.append(dbc)
                         axis_i += 1
             elif bc['type'] == 'force':
