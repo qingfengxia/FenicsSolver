@@ -44,12 +44,13 @@ def test(using_anisotropic_conductivity = True):
     T_cold = 30
     T_ambient = 0
     conductivity = 0.6
-    heat_flux_density = (T_hot-T_cold)*conductivity
+    length = cy_max - cy_min
+    heat_flux = (T_hot-T_cold)/length*conductivity  # divided by length scale which is unity 1 ->  heat flux W/m^2
 
     bcs = { 
             "hot": {'boundary': top, 'boundary_id': 1, 'type': 'Dirichlet', 'value': Constant(T_hot)}, 
-            "left":  {'boundary': left, 'boundary_id': 3, 'type': 'Neumann', 'value': Constant(0)}, 
-            "right":  {'boundary': right, 'boundary_id': 4, 'type': 'Neumann', 'value': Constant(0)}, 
+            "left":  {'boundary': left, 'boundary_id': 3, 'type': 'heatFlux', 'value': Constant(0)}, # unit: K/m
+            "right":  {'boundary': right, 'boundary_id': 4, 'type': 'heatFlux', 'value': Constant(0)}, 
             #back and front is zero gradient, need not set, it is default
     }
 
@@ -101,12 +102,12 @@ def test(using_anisotropic_conductivity = True):
         """
     else:
         K = conductivity
-        htc = heat_flux_density / (T_cold - T_ambient)
-        print("analytical heat flux density = ", heat_flux_density)
+        htc = heat_flux / (T_cold - T_ambient)
+        print("analytical heat flux [w/m^2] = ", heat_flux)
 
     #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant(T_cold)}
-    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Neumann', 'value': Constant(heat_flux_density)}
-    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Robin', 'value': (Constant(htc), Constant(T_ambient))}
+    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'heatFlux', 'value': Constant(heat_flux)}
+    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Robin', 'value': (Constant(T_ambient), Constant(htc))}
 
     settings = {'solver_name': 'scaler',  # or just class name?
                     'mesh': None, 'function_space': Q, 'periodic_boundary': None, 

@@ -18,13 +18,13 @@ _default_material = {'conductivity': Constant(0.6),  # this is a general one, th
 
 from SolverBase import SolverBase, SolverError
 class ScalerEquationSolver(SolverBase):
-    """  this is a general scaler solver, modelled after EnergyEquation, other solver can derive from this basic one
-    # 3 types of boundaries supported:
-    # energy source unit:  W/m^3
+    """  this is a general scaler solver, modelled after Heat Transfer Equation, other solver can derive from this basic one
+    # 4 types of boundaries supported:
+    # body source unit:  W/m^3
     # convective velocity: m/s, 
     # Thermal Conductivity:  w/(K m)
     # Specific Heat Capacity, Cp:  J/(kg K)
-    # shear_heating,  common lubrication scinario, high viscosity and shear speed, counted as volume source
+    # shear_heating,  common in lubrication scinario, high viscosity and shear speed, one kind of volume/body source
     """
     def __init__(self, s):
         SolverBase.__init__(self, s)
@@ -68,38 +68,49 @@ class ScalerEquationSolver(SolverBase):
         return v0
 
     def update_boundary_conditions(self, time_iter_, T_0, T_prev):
-        T = TrialFunction(self.function_space)
+        # boundary type is defined in FreeCAD FemConstraintFluidBoundary and its TaskPanel
+        # zeroGradient is default thermal boundary, no effect on equation
+        T = TrialFunction(self.function_space)  # todo: could be shared beween time step
         Tq = TestFunction(self.function_space)
+        normal = FacetNormal(self.mesh)
 
-        ds= Measure("ds", subdomain_data=self.boundary_facets)  # if later marking updating in this ds?
-        # no default boundary type applied? 
+        ds= Measure("ds", subdomain_data=self.boundary_facets)  # normal direction
         bcs = []
         integrals_N = []  # heat flux
-        integrals_R = []  # HTC
+        k = self.conductivity() # constant, experssion or tensor
         for name, bc in self.boundary_conditions.items():
             i = bc['boundary_id']
-            if bc['type'] =='Dirichlet':
+            if bc['type'] == 'Dirichlet' or bc['type'] == 'fixedValue':
                 T_bc = self.get_boundary_value(bc, time_iter_)
                 dbc = DirichletBC(self.function_space, T_bc, self.boundary_facets, i)
                 bcs.append(dbc)
-            elif bc['type'] == 'Neumann':  # as heat_flux_density , zero gradient supported? yes
+            elif bc['type'] == 'Neumann' or bc['type'] =='fixedGradient':  # unit: K/m
                 g = self.get_boundary_value(bc, time_iter_)
-                integrals_N.append( g*Tq*ds(i))  # normal direction?
-            elif bc['type'] == 'Robin':
-                htc, Ta = bc['value']  # must be specified in Constant or Expressed in setup dict
-                integrals_R.append( htc*(T - Ta)*Tq*ds(i))  # normal direction?
+                integrals_N.append(k*g*Tq*ds(i))  # only work for constant conductivty k
+                #integrals_N.append(inner(k * (normal*g), Tq)*ds(i))  # not working
+            elif bc['type'] == 'heatFlux': # heatFlux: W/m2, it is not a general flux name
+                g = self.get_boundary_value(bc, time_iter_)
+                integrals_N.append(g*Tq*ds(i))
+            elif bc['type'] == 'mixed':
+                T_bc, g = self.get_boundary_value(bc, time_iter_)
+                integrals_N.append(k*g*Tq*ds(i))  # only work for constant conductivty k
+                dbc = DirichletBC(self.function_space, T_bc, self.boundary_facets, i)
+                bcs.append(dbc)
+            elif bc['type'] == 'Robin' or bc['type'] == 'HTC':  # FIXME: HTC is not a general name
+                #Robin, how to get the boundary value,  T as the first, HTC as the second
+                Ta, htc = bc['value']  # must be specified in Constant or Expressed in setup dict
+                integrals_N.append( htc*(Ta-T)*Tq*ds(i))
             else:
                 raise SolverError('boundary type`{}` is not supported'.format(bc['type']))
 
         # Energy equation
         def F_static(T, Tq):
-            k = self.conductivity() # constant, experssion or tensor
             F =  inner(k * grad(T), grad(Tq))*dx
             if self.convective_velocity:  # convective heat conduction
                 self.vector_space = VectorFunctionSpace(self.function_space.mesh(), 'CG', self.degree)
                 vel = project(self.convective_velocity, self.vector_space)
                 F += inner(inner(k * grad(T), vel), Tq)*dx # support k as tensor for anisotropy conductivity
-            F += sum(integrals_R) - sum(integrals_N)  # 
+            F -= sum(integrals_N)
             if self.body_source:
                 F -= self.body_source*Tq*dx
             return F
@@ -119,7 +130,12 @@ class ScalerEquationSolver(SolverBase):
         # solving
         a_T, L_T = system(F)
         A_T = assemble(a_T)
-        solver_T= KrylovSolver('gmres', 'ilu')
+
+        # solver and parameters are defined by solver_parameters dict
+        solver_T= KrylovSolver('gmres', 'ilu')  # not working with MPI
+        solver_T.parameters["relative_tolerance"] = 1e-8
+        solver_T.parameters["maximum_iterations"] = 5000
+        #solver_T.parameters["monitor_convergence"] = True
 
         b_T = assemble(L_T)
         [bc.apply(A_T, b_T) for bc in bcs]  # apply Dirichlet BC
