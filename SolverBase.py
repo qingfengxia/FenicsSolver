@@ -57,6 +57,11 @@ class SolverBase():
         else:
             raise SolverError('case setup data must be a python dict')
 
+    def print(self):
+        import pprint
+        pp = pprint.PrettyPrinter(indent=4)
+        pp.pprint(self.settings)
+
     def load_settings(self, s):
         ## mesh and boundary
         self.boundary_conditions = s['boundary_conditions']
@@ -80,13 +85,6 @@ class SolverBase():
             raise SolverError('mesh or function space must specified to construct solver object')
         self.dimension = self.mesh.geometry().dim()
 
-        """
-        #also read subdomains         #self.subdomains = MeshFunction("size_t", mesh, fname+"_physical_region.xml")
-        if 'boundary_file' in s and os.path.exists(s['boundary_file']):
-            self.boundary_facets = MeshFunction("size_t", self.mesh, s['boundary_file'])  # fname+"_facet_region.xml"
-        else:
-            self.generate_boundary_facets()
-        """
         ## 
         if 'body_source' in s and s['body_source']:
             self.body_source = self.translate_value(s['body_source'])
@@ -137,6 +135,7 @@ class SolverBase():
         else:
             raise SolverError('mesh or function space must specified to construct solver object')
         self.mesh = mesh
+        plot(self.boundary_facets, "boundary facets colored by ID")
 
     def generate_function_space(self, periodic_boundary):
         self.degree = 1
@@ -157,7 +156,6 @@ class SolverBase():
         for name, bc in self.boundary_conditions.items():
             bc['boundary'].mark(boundary_facets, bc['boundary_id'])
         self.boundary_facets = boundary_facets
-        #plot(boundary_facets, "boundary facets colored by ID")
 
     def translate_value(self, value):
         W = self.function_space
@@ -212,19 +210,24 @@ class SolverBase():
         # Define functions for transient loop
         up_prev = Function(self.function_space)
         ts = self.transient_settings
+
         # Define a parameters for a stationary loop
         t = ts['starting_time']
         time_iter_ = 0
         if ts['transient']:
             t_end = ts['ending_time']
         else:
-            t_end = ts['time_step']
+            t_end = t + 1
 
+        print(ts, t, t_end)
         # Transient loop also works for steady, by set `t_end = self.time_step`
         timer_solver_all = Timer("TimerSolveAll")
         timer_solver_all.start()
         while (t < t_end):
-            dt = self.get_time_step(time_iter_)
+            if ts['transient']:
+                dt = self.get_time_step(time_iter_)
+            else:
+                dt = 1
 
             ## overloaded by derived classes
             F, Dirichlet_bcs_up = self.update_boundary_conditions(time_iter_, up_0, up_prev)

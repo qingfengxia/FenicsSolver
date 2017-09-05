@@ -31,19 +31,18 @@ Run the script files with "test_" suffix, which are gtest compatible. This packa
 
 ### 1. Initial demonstration
 
-A demo of object oriented solver *ScalerEquationSolver* is uploaded, while other solvers are under development. 
+A series of object oriented solvers: *ScalerEquationSolver* and *LinearElasticitySolver*, derived from *BaseSolver*, while NavierStokesSolver is under testing. 
 
 Case setup: json file format could be the text case setup file, mapping directly to and from python dict data structure.
 
 ### 2. FreeCAD GUI integration (late 2017)
 
-FreeCAD developer *joha2* has added mesh export function in FemWorkbench, once the boundary mesh can be exported, case setup for fenics solver will be write in FreeCAD workbench.
+3D xml mesh and boundary export has been implemented by Qingfeng Xia via Gmsh, this feature has yet been push to FreeCAD master. Meanwhile, FreeCAD developer *joha2* has added mesh export function in FemWorkbench, once the boundary mesh can be exported, case setup for fenics solver will be write in FreeCAD workbench.
 
-3D xml mesh and boundary export has been implemented by Qingfeng Xia via Gmsh, this feature has yet been push to FreeCAD master.
 
 ### 3. Coupling of multiple solvers in series
 
-Not yet designed
+Not yet designed.
 
 ### 4. Coupling with external solvers
 

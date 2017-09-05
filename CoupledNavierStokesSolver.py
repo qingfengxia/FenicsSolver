@@ -114,6 +114,7 @@ class CoupledNavierStokesSolver(SolverBase):
         ## boundary setup and update for each time step
         n = FacetNormal(self.mesh)  # used in pressure force
 
+        print("Updating boundary at time iter = {}".format(time_iter_))
         ds = Measure("ds", subdomain_data=self.boundary_facets)
         if time_iter_ == 0:
             plot(self.boundary_facets, title ="boundary colored by ID")  # diff color do visual diff boundary 
@@ -138,6 +139,7 @@ class CoupledNavierStokesSolver(SolverBase):
                 bvalue = self.get_boundary_value(bc, time_iter_)
                 if bc['type'] == 'Dirichlet':
                     Dirichlet_bcs_up.append(DirichletBC(W.sub(0), bvalue, self.boundary_facets, bc['boundary_id']) )
+                    print("found velocity boundary for id = {}".format(bc['boundary_id']))
                 elif bc['type'] == 'Neumann':  # zero gradient, outflow
                     pass # FIXME
                 else:
@@ -151,6 +153,7 @@ class CoupledNavierStokesSolver(SolverBase):
                     #  viscous force on pressure boundary?
                     F += inner(bvalue*n, v)*ds(bc['boundary_id'])  # very import to make sure convergence
                     F -= self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(bc['boundary_id'])  #  why 
+                    print("found pressure boundary for id = {}".format(bc['boundary_id']))
                 elif bc['type'] == 'Neumann':  # zero gradient
                     pass   # FIXME, not very common boundary
                 else:

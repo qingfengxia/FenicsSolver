@@ -7,12 +7,6 @@ from dolfin import *
 supported_scaler_equations = {'temperature'}
 # small species factor, that mixed material properties are same as the primary species, such as dye in water
 
-# water
-_default_material = {'conductivity': Constant(0.6),  # this is a general one, thermal, electrical, diff
-    'specific_heat_capacity': Constant(4200), 
-    'density' : Constant(1000),
-    'kinetic_viscosity': Constant(1e06)
-    }
 #thermal diffusivity = (thermal conductivity) / (density * specific heat)
 # thermal capacity = density * specific heat
 
@@ -36,6 +30,8 @@ class ScalerEquationSolver(SolverBase):
 
         if 'convective_velocity' in self.settings:
             self.convective_velocity = self.settings['convective_velocity']
+        else:
+            self.convective_velocity = None
 
     def capacity(self):
         if 'capacity' in self.material:
@@ -58,11 +54,8 @@ class ScalerEquationSolver(SolverBase):
             return self.material['thermal_conductivity']
         raise SolverError(''.format(self.scaler_name))
 
-    def solve(self):
-        return self.solve_transient()
-
     def get_internal_field(self):
-        v0 = self.translate_value(self.initial_values)
+        v0 = self.translate_value(self.initial_values[self.scaler_name])
         if isinstance(v0, (Constant, Expression)):
             v0 = interpolate(v0, self.function_space)
         return v0
@@ -113,6 +106,7 @@ class ScalerEquationSolver(SolverBase):
                    + theta*F_static(T, Tq) + (1.0-theta)*F_static(T_0, Tq)
         else:
             F = F_static(T, Tq)
+        print(F)
         return F, bcs
 
     def solve_static(self, F, T_0=None, bcs=[]):
@@ -130,3 +124,15 @@ class ScalerEquationSolver(SolverBase):
         solver_T.solve(A_T, T.vector(), b_T)
 
         return T
+
+    ############## public API ##########################
+    def solve(self):
+        self.result = self.solve_transient()
+        return self.result
+
+    def export(self):
+        #save and return save file name, also timestamp
+        result_filename = self.settings['case_folder'] + os.path.sep + "temperature" + "_time0" +  ".vtk"
+
+    def plot(self):
+        plot(self.result)
