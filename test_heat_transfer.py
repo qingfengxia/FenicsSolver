@@ -109,14 +109,14 @@ def test(using_anisotropic_conductivity = True):
     bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'heatFlux', 'value': Constant(heat_flux)}
     #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Robin', 'value': (Constant(T_ambient), Constant(htc))}
 
-    settings = {'solver_name': 'scaler',  # or just class name?
+    settings = {'solver_name': 'ScalerEquationSolver',
                     'mesh': None, 'function_space': Q, 'periodic_boundary': None, 
                     'boundary_conditions': bcs, 'body_source': None, 
-                    'initial_values': 300.0,
+                    'initial_values': {'temperature': 300},
                     'material':{}, 
                     'solver_settings': {
                         'transient_settings': {'transient': False, 'starting_time': 0, 'time_step': 0.01, 'ending_time': 0.03},
-                        'reference_values': {},
+                        'reference_values': {'temperature': 300},
                         'convergence_settings': {'default': 1e-3}
                         },
                     # solver specific settings
