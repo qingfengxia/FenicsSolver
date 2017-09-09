@@ -44,15 +44,15 @@ class ScalerEquationSolver(SolverBase):
         elif self.scaler_name == "electric_potential":
             pass
         else:
-            raise SolverError(''.format(self.scaler_name))
-            
+            raise SolverError('material capacity property is not found for {}'.format(self.scaler_name))
+
     def conductivity(self):
         if 'conductivity' in self.material:
             return self.material['conductivity']
         # if not found, calc it
         if self.scaler_name == "temperature":
             return self.material['thermal_conductivity']
-        raise SolverError(''.format(self.scaler_name))
+        raise SolverError('conductivity material property is not found for {}'.format(self.scaler_name))
 
     def get_internal_field(self):
         v0 = self.translate_value(self.initial_values[self.scaler_name])
@@ -125,11 +125,15 @@ class ScalerEquationSolver(SolverBase):
         a_T, L_T = system(F)
         A_T = assemble(a_T)
 
+        parameters = self.solver_settings['solver_parameters']
         # solver and parameters are defined by solver_parameters dict
-        solver_T= KrylovSolver('gmres', 'ilu')  # not working with MPI
-        solver_T.parameters["relative_tolerance"] = 1e-8
-        solver_T.parameters["maximum_iterations"] = 5000
-        #solver_T.parameters["monitor_convergence"] = True
+        if has_petsc():
+            solver_T= PETScKrylovSolver('default', 'default')
+        else:
+            solver_T= KrylovSolver('default', 'default')  # 'gmres', 'ilu', not working with MPI
+        solver_T.parameters["relative_tolerance"] = parameters["relative_tolerance"] 
+        solver_T.parameters["maximum_iterations"] = parameters["maximum_iterations"]
+        solver_T.parameters["monitor_convergence"] = parameters["monitor_convergence"]
 
         b_T = assemble(L_T)
         [bc.apply(A_T, b_T) for bc in bcs]  # apply Dirichlet BC
@@ -149,6 +153,7 @@ class ScalerEquationSolver(SolverBase):
     def export(self):
         #save and return save file name, also timestamp
         result_filename = self.settings['case_folder'] + os.path.sep + "temperature" + "_time0" +  ".vtk"
+        return result_filename
 
     def plot(self):
         plot(self.result)

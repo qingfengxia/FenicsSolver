@@ -35,13 +35,16 @@ default_case_settings = {'solver_name': None,
                 'case_name': 'test', 'case_folder': "/tmp/",  'case_file': None,
                 'mesh':  None, 'function_space': None, 'periodic_boundary': None, 
                 'boundary_conditions': None, 
-                'body_source': None,
+                'body_source': None,  # can also be a list of material dict for different subdomains [{'subdomain_id': 1, 'value': 2}]
                 'initial_values': {},
-                'material':{},
+                'material':{},  # can be a list of material dict for different subdomains
                 'solver_settings': {
                     'transient_settings': {'transient': False, 'starting_time': 0, 'time_step': 0.01, 'ending_time': 0.03},
-                    'convergence_settings': {'default': 1e-3},
                     'reference_values': {},
+                    'solver_parameters': {"relative_tolerance": 1e-5,  # mapping to solver.parameters of Fenics
+                                                        "maximum_iterations": 500,
+                                                        "monitor_convergence": False,  # print to console
+                                                    },
                     },
                 "output_settings": {}
                 }
@@ -110,28 +113,54 @@ class SolverBase():
         self.ending_time = ts['ending_time']
         """
 
+    def _read_hdf5_mesh(self, filename):
+        # path is identical to FenicsSolver.utility 
+        mesh = Mesh()
+        hdf = HDF5File(mesh.mpi_comm(), filename, "r")
+        hdf.read(mesh, "/mesh", False)
+        self.subdomains = CellFunction("size_t", mesh)
+        if (hdf.has_dataset("/subdomains")):
+            hdf.read(subdomains, "/subdomains")
+        else:
+            print('Subdomain file is not provided')
+        if (hdf.has_dataset("/boundaries")):
+            self.boundary_facets = FacetFunction("size_t", mesh)
+            hdf.read(self.boundary_facets, "/boundaries")
+        else:
+            print('Boundary facets file is not provided, marked from boundary settings')
+            self.generate_boundary_facets()  # boundary marking from subdomain instance
+        self.mesh = mesh
+
+    def _read_xml_mesh(self, filename):
+        mesh = Mesh(filename)
+        bmeshfile = filename[:-4] + "_facet_region.xml"
+        if os.path.exists(bmeshfile):
+            self.boundary_facets = MeshFunction("size_t", mesh, bmeshfile)
+        else:
+            print('Boundary facets are not provided by xml input file, boundary will be marked from subdomain instance')
+            self.generate_boundary_facets()  # boundary marking from subdomain instance
+        subdomain_meshfile = filename[:-4] + "_physical_region.xml"
+        if os.path.exists(subdomain_meshfile):
+            self.subdomains = MeshFunction("size_t", mesh, subdomain_meshfile)
+        else:
+            self.subdomains = CellFunction("size_t", mesh)
+
     def read_mesh(self, filename):
         print(filename, type(filename))  # unicode filename NOT working, why?
         if isinstance(filename, (unicode,)):
             filename = filename.encode('utf-8')
         if not os.path.exists(filename):
             raise SolverError('mesh file: {} , does not exist'. format(filename))
-        if filename[-5:] == ".xdmf":
+        if filename[-5:] == ".xdmf":  # there are some new feature in 2017.2
             mesh = Mesh()
             f = XDMFFile(mpi_comm_world(), filename)
             f.read(mesh, True)
             self.generate_boundary_facets()
+            self.subdomains = CellFunction("size_t", mesh)
         elif filename[-4:] == ".xml":
-            mesh = Mesh(filename)
-            bmeshfile = filename[:-4] + "_facet_region.xml"
-            if os.path.exists(bmeshfile):
-                self.boundary_facets = MeshFunction("size_t", mesh, bmeshfile)
-            else:
-                print('Boundary facets are not provided by xml input file, boundary will be marked from subdomain instance')
-                self.generate_boundary_facets()  # boundary marking from subdomain instance
-            subdomain_meshfile = filename[:-4] + "_physical_region.xml"
-            if os.path.exists(subdomain_meshfile):
-                self.physical_region = MeshFunction("size_t", mesh, subdomain_meshfile)
+            self._read_xml_mesh(filename)
+        elif filename[-3:] == ".h5" or filename[-5:] == ".hdf5":
+            self._read_hdf5_mesh(filename)
         else:
             raise SolverError('mesh or function space must specified to construct solver object')
         self.mesh = mesh

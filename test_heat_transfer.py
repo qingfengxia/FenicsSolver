@@ -117,7 +117,10 @@ def test(using_anisotropic_conductivity = True):
                     'solver_settings': {
                         'transient_settings': {'transient': False, 'starting_time': 0, 'time_step': 0.01, 'ending_time': 0.03},
                         'reference_values': {'temperature': 300},
-                        'convergence_settings': {'default': 1e-3}
+                        'solver_parameters': {"relative_tolerance": 1e-5,  # mapping to solver.parameters of Fenics
+                                                        "maximum_iterations": 500,
+                                                        "monitor_convergence": False,  # print to console
+                                                        },
                         },
                     # solver specific settings
                     'scaler_name': 'temperature',
