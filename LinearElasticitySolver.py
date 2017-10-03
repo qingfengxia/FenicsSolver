@@ -112,33 +112,10 @@ class LinearElasticitySolver(SolverBase):
         V = FunctionSpace(self.mesh, 'P', 1)  # correct, but why using another function space
         return project(von_Mises, V)
 
-    def update_boundary_conditions(self, time_iter_, u_0, u_1):
+    def update_boundary_conditions(self, time_iter_, u, v, ds):
         V = self.function_space
-        # Define variational problem
-        u = TrialFunction(V)
-        v = TestFunction(V)
-
-        elasticity = self.material['elastic_modulus']
-        nu = self.material['poisson_ratio']
-        mu = elasticity/(2.0*(1.0 + nu))
-        lmbda = elasticity*nu/((1.0 + nu)*(1.0 - 2.0*nu))
-
-        a = inner(self.sigma(u), grad(v))*dx
-        integrals_F = []
-        if self.body_source:
-            integrals_F.append( inner(self.body_source, v)*dx )
-
-        ## thermal stress
-        if self.temperature_distribution:
-            T = self.translate_value(self.temperature_distribution)
-            thermal_stress = inner(elasticity * grad( T - Constant(self.reference_values['temperature'])) , v)*dx
-            integrals_F.append( thermal_stress )
-
-        ds= Measure("ds", subdomain_data=self.boundary_facets)  # if later marking updating in this ds?
-        if time_iter_==0:
-            plot(self.boundary_facets, title = "boundary facets colored by ID")
-
         bcs = []
+        integrals_F = []
         mesh_normal = FacetNormal(self.mesh)  # n is predefined as normal?
         for name, bc in self.boundary_conditions.items():
             i = bc['boundary_id']
@@ -159,6 +136,7 @@ class LinearElasticitySolver(SolverBase):
                 bc_area = assemble(Constant(1)*ds(bc['boundary_id'], domain=self.mesh))
                 print('boundary area (m2) for force boundary is', bc_area)
                 g = bc_force / bc_area
+                # FIXME: assuming all force are normal to mesh boundary
                 if 'direction' in bc and bc['direction']:
                     direction_vector = bc['direction']
                 else:
@@ -176,9 +154,36 @@ class LinearElasticitySolver(SolverBase):
             else:
                 raise SolverError('thermal boundary type`{}` is not supported'.format(bc['type']))
         ## nodal constraint is not yet supported, try make it a small surface load instead
+        return bcs, integrals_F
+
+    def generate_form(self, time_iter_, u_0, u_prev):
+        V = self.function_space
+        # Define variational problem
+        u = TrialFunction(V)
+        v = TestFunction(V)
+
+        elasticity = self.material['elastic_modulus']
+        nu = self.material['poisson_ratio']
+        mu = elasticity/(2.0*(1.0 + nu))
+        lmbda = elasticity*nu/((1.0 + nu)*(1.0 - 2.0*nu))
+
+        F = inner(self.sigma(u), grad(v))*dx
+
+        ds= Measure("ds", subdomain_data=self.boundary_facets)  # if later marking updating in this ds?
+        bcs, integrals_F = self.update_boundary_conditions(time_iter_, u, v, ds)
+        if time_iter_==0:
+            plot(self.boundary_facets, title = "boundary facets colored by ID")
+
+        if self.body_source:
+            integrals_F.append( inner(self.body_source, v)*dx )
+
+        ## thermal stress
+        if self.temperature_distribution:
+            T = self.translate_value(self.temperature_distribution)
+            thermal_stress = inner(elasticity * grad( T - Constant(self.reference_values['temperature'])) , v)*dx
+            integrals_F.append( thermal_stress )
 
         # Assemble system, applying boundary conditions and extra items
-        F = a
         if len(integrals_F):
             for item in integrals_F: F += item  # L side
 

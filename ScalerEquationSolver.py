@@ -60,9 +60,7 @@ class ScalerEquationSolver(SolverBase):
             v0 = interpolate(v0, self.function_space)
         return v0
 
-    def update_boundary_conditions(self, time_iter_, T_0, T_prev):
-        # boundary type is defined in FreeCAD FemConstraintFluidBoundary and its TaskPanel
-        # zeroGradient is default thermal boundary, no effect on equation
+    def generate_form(self, time_iter_, T_0, T_prev):
         T = TrialFunction(self.function_space)  # todo: could be shared beween time step
         Tq = TestFunction(self.function_space)
         normal = FacetNormal(self.mesh)
@@ -71,6 +69,10 @@ class ScalerEquationSolver(SolverBase):
         bcs = []
         integrals_N = []  # heat flux
         k = self.conductivity() # constant, experssion or tensor
+
+        # TODO: split into a new function update_boundary
+        # boundary type is defined in FreeCAD FemConstraintFluidBoundary and its TaskPanel
+        # zeroGradient is default thermal boundary, no effect on equation
         for name, bc in self.boundary_conditions.items():
             i = bc['boundary_id']
             if bc['type'] == 'Dirichlet' or bc['type'] == 'fixedValue':

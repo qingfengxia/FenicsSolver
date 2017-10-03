@@ -259,7 +259,7 @@ class SolverBase():
                 dt = 1
 
             ## overloaded by derived classes
-            F, Dirichlet_bcs_up = self.update_boundary_conditions(time_iter_, up_0, up_prev)
+            F, Dirichlet_bcs_up = self.generate_form(time_iter_, up_0, up_prev)
 
             up_prev.assign(up_0)  #
             up_0 = self.solve_static(F, up_0, Dirichlet_bcs_up)
