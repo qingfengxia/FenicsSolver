@@ -167,7 +167,7 @@ class SolverBase():
         plot(self.boundary_facets, "boundary facets colored by ID")
 
     def generate_function_space(self, periodic_boundary):
-        self.degree = 1
+        self.degree = 1  # TODO: get degree from settings
         try:
             if periodic_boundary:
                 self.function_space = FunctionSpace(self.mesh, "CG", self.degree, constrained_domain=periodic_boundary)
@@ -233,11 +233,13 @@ class SolverBase():
         return dt
 
     def solve_transient(self):
-        ## init to default or user provided constant, todo: possibly obtained from the previous time step
-        up_0 = self.get_internal_field()
-
+        #
+        trial_function = TrialFunction(self.function_space)
+        test_function = TestFunction(self.function_space)
         # Define functions for transient loop
+        up_0 = self.get_internal_field()  # init to default or user provided constant
         up_prev = Function(self.function_space)
+        up_prev.assign(up_0)
         ts = self.transient_settings
 
         # Define a parameters for a stationary loop
@@ -258,8 +260,8 @@ class SolverBase():
             else:
                 dt = 1
 
-            ## overloaded by derived classes
-            F, Dirichlet_bcs_up = self.generate_form(time_iter_, up_0, up_prev)
+            ## overloaded by derived classes, maybe move out of temporal loop if boundary does not change form
+            F, Dirichlet_bcs_up = self.generate_form(time_iter_, trial_function, test_function, up_0, up_prev)
 
             up_prev.assign(up_0)  #
             up_0 = self.solve_static(F, up_0, Dirichlet_bcs_up)

@@ -60,9 +60,9 @@ class ScalerEquationSolver(SolverBase):
             v0 = interpolate(v0, self.function_space)
         return v0
 
-    def generate_form(self, time_iter_, T_0, T_prev):
-        T = TrialFunction(self.function_space)  # todo: could be shared beween time step
-        Tq = TestFunction(self.function_space)
+    def generate_form(self, time_iter_, T, Tq, T_0, T_prev):
+        #T = TrialFunction(self.function_space)  # todo: could be shared beween time step
+        #Tq = TestFunction(self.function_space)  # todo: could be shared beween time step
         normal = FacetNormal(self.mesh)
 
         ds= Measure("ds", subdomain_data=self.boundary_facets)  # normal direction
@@ -119,10 +119,10 @@ class ScalerEquationSolver(SolverBase):
                    + theta*F_static(T, Tq) + (1.0-theta)*F_static(T_0, Tq)
         else:
             F = F_static(T, Tq)
-        print(F)
+        #print(F)
         return F, bcs
 
-    def solve_static(self, F, T_0=None, bcs=[]):
+    def solve_static(self, F, T, bcs=[]):
         # solving
         a_T, L_T = system(F)
         A_T = assemble(a_T)
@@ -138,11 +138,9 @@ class ScalerEquationSolver(SolverBase):
         solver_T.parameters["monitor_convergence"] = parameters["monitor_convergence"]
 
         b_T = assemble(L_T)
+        #for bc in bcs: print(type(bc))
         [bc.apply(A_T, b_T) for bc in bcs]  # apply Dirichlet BC
 
-        T = Function(self.function_space)
-        if T_0:
-            T.vector()[:] = T_0.vector().array()
         solver_T.solve(A_T, T.vector(), b_T)
 
         return T

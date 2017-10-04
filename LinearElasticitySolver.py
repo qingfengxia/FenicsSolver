@@ -156,11 +156,11 @@ class LinearElasticitySolver(SolverBase):
         ## nodal constraint is not yet supported, try make it a small surface load instead
         return bcs, integrals_F
 
-    def generate_form(self, time_iter_, u_0, u_prev):
+    def generate_form(self, time_iter_, u, v, u_0, u_prev):
         V = self.function_space
         # Define variational problem
-        u = TrialFunction(V)
-        v = TestFunction(V)
+        #u = TrialFunction(V)
+        #v = TestFunction(V)
 
         elasticity = self.material['elastic_modulus']
         nu = self.material['poisson_ratio']

@@ -66,7 +66,7 @@ class CoupledNavierStokesSolver(SolverBase):
         self.is_iterative_solver = True  ## Deprecated:  -> solver_parameter
 
     def generate_function_space(self, periodic_boundary):
-        self.vel_degree = 2
+        self.vel_degree = 2  # order 3 is working for 2D elbow testing
 
         V = VectorElement("CG", self.mesh.ufl_cell(), self.vel_degree)  # degree 2, must be higher than pressure
         Q = FiniteElement("CG", self.mesh.ufl_cell(), 1)
@@ -126,7 +126,7 @@ class CoupledNavierStokesSolver(SolverBase):
         #   _nu = viscosity(u, p)
         return _nu  # nonlinear, nonNewtonian
 
-    def generate_form(self, time_iter_, up_0, up_prev):
+    def generate_form(self, time_iter_, up, test_function, up_0, up_prev):
         W = self.function_space
         ## boundary setup and update for each time step
 
@@ -136,15 +136,14 @@ class CoupledNavierStokesSolver(SolverBase):
             plot(self.boundary_facets, title ="boundary colored by ID")  # diff color do visual diff boundary 
 
         # Define unknown and test function(s)
-        v, q = TestFunctions(W)
-        up = TrialFunction(W)
+        v, q = split(test_function)
         u, p = split(up)
         u_0, p_0 = split(up_0)
 
         ## weak form
         F = self.F_static(u, v, u_0, p, q, p_0)
         if self.transient:  # temporal scheme
-            F += self.F_transient(time_iter_, u, v, up_prev)
+            F += self.F_transient(time_iter_, u, v, up_0, up_prev)
 
         Dirichlet_bcs_up, F_bc = self.update_boundary_conditions(F, time_iter_, u, v, ds)
         for it in F_bc:
@@ -167,7 +166,8 @@ class CoupledNavierStokesSolver(SolverBase):
         F += inner(dot(grad(u), u_0), v)*dx
         return F
 
-    def F_transient(self, time_iter_, u, v, up_prev):
+    def F_transient(self, time_iter_, u, v, up_0, up_prev):
+        u_0, p_0 = split(up_0)
         u_prev, p_prev = split(up_prev)
         return (1 / self.get_time_step(time_iter_)) * inner(u - u_prev, v) * dx
 
