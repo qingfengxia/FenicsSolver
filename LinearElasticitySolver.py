@@ -156,7 +156,7 @@ class LinearElasticitySolver(SolverBase):
         ## nodal constraint is not yet supported, try make it a small surface load instead
         return bcs, integrals_F
 
-    def generate_form(self, time_iter_, u, v, u_0, u_prev):
+    def generate_form(self, time_iter_, u, v, u_current, u_prev):
         V = self.function_space
         # Define variational problem
         #u = TrialFunction(V)
@@ -179,7 +179,7 @@ class LinearElasticitySolver(SolverBase):
 
         ## thermal stress
         if self.temperature_distribution:
-            T = self.translate_value(self.temperature_distribution)
+            T = self.translate_value(self.temperature_distribution)  # interpolate
             thermal_stress = inner(elasticity * grad( T - Constant(self.reference_values['temperature'])) , v)*dx
             integrals_F.append( thermal_stress )
 
@@ -189,8 +189,15 @@ class LinearElasticitySolver(SolverBase):
 
         return F, bcs
 
+    def solve_static(self, F, u_, bcs):
+        #if self.is_iterative_solver:
+        #u_ = self.solve_iteratively(F, bcs, u)
+        u_ = self.solve_amg(F, u_, bcs)
+        # calc boundingbox to make sure no large deformation?
+        return u_
+
     def solve(self):
-        u = self.solve_transient()
+        u = self.solve_transient()  # defined in SolverBase
         
         if self. solving_modal:
             self.solve_modal(F, bcs)  # test passed
@@ -225,19 +232,6 @@ class LinearElasticitySolver(SolverBase):
         ev.vector()[:] = rx
 
         return ev
-
-    def solve_static(self, F, u_0=None, bcs = []):
-        # Create solution function, why not init this function?
-        if u_0:
-            u = u_0
-        else:
-            u = Function(self.function_space)
-
-        #if self.is_iterative_solver:
-        #u = self.solve_iteratively(F, bcs, u)
-        u = self.solve_amg(F, bcs, u)
-        # calc boundingbox to make sure no large deformation?
-        return u
 
 
 if __name__ == '__main__':

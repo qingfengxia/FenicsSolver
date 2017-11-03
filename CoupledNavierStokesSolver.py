@@ -32,7 +32,7 @@ from dolfin import *
 
 """
 TODO:
-1. ctor() using dict, load json case_input file
+1. temperature
 2. boundary translation
 3. test parallel by MPI
 """
@@ -58,33 +58,43 @@ class CoupledNavierStokesSolver(SolverBase):
         if not self.initial_values:  # TODO: Also add temp init
             self.initial_values = {'pressure': self.reference_values['pressure'],  'temperature': self.reference_values['temperature'] }
             if self.dimension == 3:
-                self.initial_values['velocity'] = (0,0,0), 
+                self.initial_values['velocity'] = (0,1,0), 
             else:
-                self.initial_values['velocity'] = (0,0)
+                self.initial_values['velocity'] = (0,1)
 
         ## Define solver parameters, underreleax, tolerance, max_iter
-        self.is_iterative_solver = True  ## Deprecated:  -> solver_parameter
+        self.is_iterative_solver = True  ## Deprecated:  -> solver_parameters
 
     def generate_function_space(self, periodic_boundary):
         self.vel_degree = 2  # order 3 is working for 2D elbow testing
-
-        V = VectorElement("CG", self.mesh.ufl_cell(), self.vel_degree)  # degree 2, must be higher than pressure
-        Q = FiniteElement("CG", self.mesh.ufl_cell(), 1)
-        #T = FiniteElement("CG", self.mesh.ufl_cell(), 1)  # temperature subspace
-        #mixed_element = [V, Q]  # MixedFunctionSpace has been removed from 2016.2
-        if periodic_boundary:
-            self.function_space = FunctionSpace(self.mesh, V * Q, constrained_domain=periodic_boundary)  # new API
-        else:
-            self.function_space = FunctionSpace(self.mesh, V * Q)
-
+        self.pressure_degree = self.vel_degree -1
+        self.solving_temperature = False
         self.is_mixed_function_space = True  # how to detect it is mixed?
 
+        V = VectorElement("CG", self.mesh.ufl_cell(), self.vel_degree)  # degree 2, must be higher than pressure
+        Q = FiniteElement("CG", self.mesh.ufl_cell(), self.pressure_degree)
+        #T = FiniteElement("CG", self.mesh.ufl_cell(), 1)  # temperature subspace, or just use Q
+        if self.solving_temperature:
+            mixed_element = MixedElement([V, Q, Q])
+        else:
+            mixed_element = V * Q  # MixedFunctionSpace has been removed from 2016.2, this API works only for 2 sub
+        if periodic_boundary:
+            self.function_space = FunctionSpace(self.mesh, mixed_element, constrained_domain=periodic_boundary)
+        else:
+            self.function_space = FunctionSpace(self.mesh, mixed_element)
+
     def get_internal_field(self):
-        up0 = Function(self.function_space)
-        #u0, p0 = split(up0)
-        #print(self.initial_values, self.function_space)
-        #u0 = interpolate(self.translate_value(self.initial_values['velocity']), self.function_space.sub(0))
-        #p0 = interpolate(self.translate_value(self.initial_values['pressure']), self.function_space.sub(1))
+        # assume:  all constant, velocity is a tupe of constant
+        # function assigner is another way, assign(m.sub(0), v0)
+        print(self.initial_values)
+
+        _initial_values = list(self.initial_values['velocity'])
+        _initial_values.append(self.initial_values['pressure'])
+        if self.solving_temperature:
+            _initial_values.append(self.initial_values['temperature'])
+            #self.function_space.ufl_element(), wht not working
+        _initial_values_expr = Expression( tuple([str(v) for v in _initial_values]), degree = 1)
+        up0 = interpolate(_initial_values_expr, self.function_space)
         return up0
 
     def viscous_stress(self, u, p):
@@ -126,7 +136,7 @@ class CoupledNavierStokesSolver(SolverBase):
         #   _nu = viscosity(u, p)
         return _nu  # nonlinear, nonNewtonian
 
-    def generate_form(self, time_iter_, up, test_function, up_0, up_prev):
+    def generate_form(self, time_iter_, trial_function, test_function, up_current, up_prev):
         W = self.function_space
         ## boundary setup and update for each time step
 
@@ -136,21 +146,21 @@ class CoupledNavierStokesSolver(SolverBase):
             plot(self.boundary_facets, title ="boundary colored by ID")  # diff color do visual diff boundary 
 
         # Define unknown and test function(s)
-        v, q = split(test_function)
-        u, p = split(up)
-        u_0, p_0 = split(up_0)
 
         ## weak form
-        F = self.F_static(u, v, u_0, p, q, p_0)
+        F = self.F_static(trial_function, test_function, up_current)
         if self.transient:  # temporal scheme
-            F += self.F_transient(time_iter_, u, v, up_0, up_prev)
+            F += self.F_transient(time_iter_, trial_function, test_function, up_current, up_prev)
 
-        Dirichlet_bcs_up, F_bc = self.update_boundary_conditions(F, time_iter_, u, v, ds)
+        Dirichlet_bcs_up, F_bc = self.update_boundary_conditions(time_iter_, trial_function, test_function, ds)
         for it in F_bc:
             F += it
         return F, Dirichlet_bcs_up
 
-    def F_static(self, u, v, u_0, p, q, p_0):
+    def F_static(self, trial_function, test_function, up_0):
+        u, p = split(trial_function)
+        v, q = split(test_function)
+        u_0, p_0 = split(up_0)
         def epsilon(u):
             """Return the symmetric gradient."""
             return 0.5 * (grad(u) + grad(u).T)
@@ -163,68 +173,81 @@ class CoupledNavierStokesSolver(SolverBase):
         if self.body_force: 
             F -= inner(self.body_force, v)*dx
         # Add convective term
-        F += inner(dot(grad(u), u_0), v)*dx
+        F += inner(dot(grad(u), u_0), v)*dx  # u_0 is the current value solved
         return F
 
-    def F_transient(self, time_iter_, u, v, up_0, up_prev):
-        u_0, p_0 = split(up_0)
+    def F_transient(self, time_iter_, trial_function, test_function, up_0, up_prev):
+        u, p = split(trial_function)
+        v, q = split(test_function)
+        u_0, p_0 = split(up_0)  # up_0 not in use
         u_prev, p_prev = split(up_prev)
         return (1 / self.get_time_step(time_iter_)) * inner(u - u_prev, v) * dx
 
-    def update_boundary_conditions(self, F, time_iter_, u, v, ds):
+    def update_boundary_conditions(self, time_iter_, trial_function, test_function, ds):
         W = self.function_space
         n = FacetNormal(self.mesh)  # used in pressure force
 
+        if self.solving_temperature:
+            u, p, pT = split(trial_function)
+            v, q, qT = split(test_function)
+        else:
+            u, p = split(trial_function)
+            v, q = split(test_function)
+
         Dirichlet_bcs_up = []
         F_bc = []
-        #Dirichlet_bcs_up = [DirichletBC(W.sub(0), Constant(0,0,0), boundary_facets, 0)] #default vel
-        for key, bc in self.boundary_conditions.items():
-            if bc['variable'] == 'velocity':
-                bvalue = self.get_boundary_value(bc, time_iter_)
-                if bc['type'] == 'Dirichlet':
-                    Dirichlet_bcs_up.append(DirichletBC(W.sub(0), bvalue, self.boundary_facets, bc['boundary_id']) )
-                    print("found velocity boundary for id = {}".format(bc['boundary_id']))
-                elif bc['type'] == 'Neumann':  # zero gradient, outflow
-                    NotImplementedError('Neumann boundary for velocity is not implemented')
-                elif bc['type'] == 'symmetry': 
-                    pass   # velocity gradient is zero, do nothing here,              no normal stress, see [COMSOL Multiphysics Modeling Guide]
+        #Dirichlet_bcs_up = [DirichletBC(W.sub(0), Constant(0,0,0), boundary_facets, 0)] #default vel, should be set before call this
+        for key, boundary in self.boundary_conditions.items():
+            #print(boundary)
+            for bc in boundary['values']:  # a list of boundary values
+                if bc['variable'] == 'velocity':
+                    bvalue = self.get_boundary_value(bc, time_iter_)
+                    if bc['type'] == 'Dirichlet':
+                        Dirichlet_bcs_up.append(DirichletBC(W.sub(0), bvalue, self.boundary_facets, boundary['boundary_id']) )
+                        print("found velocity boundary for id = {}".format(boundary['boundary_id']))
+                    elif bc['type'] == 'Neumann':  # zero gradient, outflow
+                        NotImplementedError('Neumann boundary for velocity is not implemented')
+                    elif bc['type'] == 'symmetry' or bc['type'] == 'farfield': 
+                        pass   # velocity gradient is zero, do nothing here,              no normal stress, see [COMSOL Multiphysics Modeling Guide]
+                    else:
+                        print('velocity boundary type`{}` is not supported'.format(bc['type']))
+                elif bc['variable'] == 'pressure':
+                    bvalue = self.get_boundary_value(bc, time_iter_)
+                    if bc['type'] == 'Dirichlet':  # pressure  inlet or outlet
+                        Dirichlet_bcs_up.append(DirichletBC(W.sub(1), bvalue, self.boundary_facets, boundary['boundary_id']) )
+                        F_bc.append(inner(bvalue*n, v)*ds(boundary['boundary_id'])) # very import to make sure convergence
+                        F_bc.append(-self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(boundary['boundary_id']))  #  pressure no viscous stress boundary
+                        print("found pressure boundary for id = {}".format(boundary['boundary_id']))
+                    elif bc['type'] == 'symmetry':
+                        # normal stress project to tangital directions:  t*(-pI + viscous_force)*n
+                        F_bc.append(-self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(boundary['boundary_id']))
+                    elif bc['type'] == 'farfield':   # 'open' to large volume is same with farfield
+                        F_bc.append(-self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(boundary['boundary_id']))  #  pressure no viscous stress boundary
+                    elif bc['type'] == 'Neumann':  # zero gradient
+                        NotImplementedError('Neumann boundary for pressure is not implemented')
+                    else:
+                        print('pressure boundary type`{}` is not supported thus ignored'.format(bc['type']))
+                elif bc['variable'] == 'temperature' and self.solving_temperature:  # used by compressible NS solver
+                    bvalue = self.get_boundary_value(bc, time_iter_)
+                    if bc['type'] == 'Dirichlet':  # pressure  inlet or outlet
+                        Dirichlet_bcs_up.append(DirichletBC(W.sub(2), bvalue, self.boundary_facets, boundary['boundary_id']) )
+                        print("found temperature boundary for id = {}".format(boundary['boundary_id']))
+                        """
+                        elif bc['type'] == 'Neumann':  # zero gradient
+                            F -=
+                        elif bc['type'] == 'Robin':  # zero gradient
+                            F -=
+                        """
+                    else:
+                        print('temperature boundary type`{}` is not supported thus ignored'.format(bc['type']))
                 else:
-                    print('velocity boundary type`{}` is not supported'.format(bc['type']))
-
-            #Dirichlet_bcs_up.append(DirichletBC(W.sub(1), Constant(self.pressure_ref), boundary_facets, 0))  # not correct
-            if bc['variable'] == 'pressure':
-                bvalue = self.get_boundary_value(bc, time_iter_)
-                if bc['type'] == 'Dirichlet':  # pressure  inlet or outlet
-                    Dirichlet_bcs_up.append(DirichletBC(W.sub(1), bvalue, self.boundary_facets, bc['boundary_id']) )
-                    F_bc.append(inner(bvalue*n, v)*ds(bc['boundary_id'])) # very import to make sure convergence
-                    F_bc.append(-self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(bc['boundary_id']))  #  pressure no viscous stress boundary
-                    print("found pressure boundary for id = {}".format(bc['boundary_id']))
-                elif bc['type'] == 'symmetry':
-                    # normal stress project to tangital directions:  t*(-pI + viscous_force)*n
-                    F_bc.append(-self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(bc['boundary_id']))
-                elif bc['type'] == 'farfield' or bc['type'] == 'open':   # open to large volume
-                    F_bc.append(-self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(bc['boundary_id']))  #  pressure no viscous stress boundary
-                elif bc['type'] == 'Neumann':  # zero gradient
-                    NotImplementedError('Neumann boundary for pressure is not implemented')
-                else:
-                    print('pressure boundary type`{}` is not supported thus ignored'.format(bc['type']))
-            """
-            if bc['variable'] == 'temperature':
-                bvalue = self.get_boundary_value(bc, time_iter_)
-                if bc['type'] == 'Dirichlet':  # pressure  inlet or outlet
-                    Dirichlet_bcs_up.append(DirichletBC(W.sub(2), bvalue, self.boundary_facets, bc['boundary_id']) )
-                    print("found temperature boundary for id = {}".format(bc['boundary_id']))
-                elif bc['type'] == 'Neumann':  # zero gradient
-                    F -=
-                elif bc['type'] == 'Robin':  # zero gradient
-                    F -=
-                else:
-                    print('pressure boundary type`{}` is not supported thus ignored'.format(bc['type']))
-            """
+                    print('boundary value `{}` is not supported thus ignored'.format(bc['variable']))
         ## end of boundary setup
         return Dirichlet_bcs_up, F_bc
 
     def solve_nonlinear(self, time_iter_, up_0, up_prev):
+        raise NotImplementedError(" nonlinear viscosity model is not implemented yet")
+        """
         iter_ = 0
         max_iter = 50
         eps = 1.0
@@ -241,72 +264,43 @@ class CoupledNavierStokesSolver(SolverBase):
         print("*" * 10 + " end of nonlinear viscosity iteration" + "*" * 10)
 
         return up_0
-
-    def set_fenics_parameters(self, solver):
-        # Define a dolfin parameters
-        if dolfin.MPI.size(dolfin.mpi_comm_world())>1:
-            using_MPI = True
-        else:
-            using_MPI = False
-
-        parameters["linear_algebra_backend"] = "PETSc"  #UMFPACK: out of memory, PETSc divergent
-        #parameters["linear_algebra_backend"] = "Eigen"  # 'uBLAS' is not supported any longer
-
-        parameters["mesh_partitioner"] = "SCOTCH"
-        #parameters["form_compiler"]["representation"] = "quadrature"
-        parameters["form_compiler"]["optimize"] = True
-        """
-        if using_MPI:
-            #parameters['linear_solver'] = 'bicgstab'  # "gmres" # not usable in MPI
-            parameters['preconditioner']= "hypre_euclid"
-        else:
-            #parameters['linear_solver'] = 'default'  # is not a parameter for LinearProblemSolver
-            parameters['preconditioner'] = "default"  # 'default', ilu only works in serial
         """
 
-    def solve_static(self, F, up_0, Dirichlet_bcs_up):
+    def solve_static(self, F, up_, Dirichlet_bcs_up):
         # Solve stationary Navier-Stokes problem with Picard method
         # other methods may be more acurate and faster
-
-        #Picard loop
-        up_s = Function(self.function_space)
-        if up_0:     up_s.vector()[:] = up_0.vector().array()  # init
-        u_s, p_s = split(up_s)
 
         iter_ = 0
         max_iter = 50
         eps = 1.0
         tol = 1E-3
+        under_relax_ratio = 0.7
+        up_temp = Function(self.function_space)  # a temporal to save value in the Picard loop
 
         timer_solver = Timer("TimerSolveStatic")
         timer_solver.start()
         while (iter_ < max_iter and eps > tol):
             # solve the linear stokes flow to avoid up_s = 0
-            #solve(F, up_s, Dirichlet_bcs_up)  #can solve nonlinear weak form
 
-            problem = LinearVariationalProblem(lhs(F), rhs(F), up_s, Dirichlet_bcs_up)
-            solver = LinearVariationalSolver(problem)
-            self.set_fenics_parameters(solver)
-            solver.solve()
-
+            up_temp.assign(up_)
             # other solving methods
-            #up_s = self.solve_iteratively(F, Dirichlet_bcs_up, up_s)
+            up_ = self.solve_linear_problem(F, up_, Dirichlet_bcs_up)
             #up_s = self.solve_amg(F, Dirichlet_bcs_up, up_s)  #  AMG is not working with mixed function space
 
-            diff_up = up_s.vector().array() - up_0.vector().array()
+            diff_up = up_.vector().array() - up_temp.vector().array()
             eps = np.linalg.norm(diff_up, ord=np.Inf)
 
             print("iter = {:d}; eps_up = {:e}; time elapsed = {}\n".format(iter_, eps, timer_solver.elapsed()))
 
             ## underreleax should be defined here, Courant number, 
-            up_0.vector()[:] = up_0.vector().array() + diff_up * 0.7
+            up_.vector()[:] = up_temp.vector().array() + diff_up * under_relax_ratio
 
             iter_ += 1
         ## end of Picard loop
         timer_solver.stop()
         print("*" * 10 + " end of Navier-Stokes equation iteration" + "*" * 10)
 
-        return up_0
+        return up_
 
     def solve(self):
         self.result = self.solve_transient()

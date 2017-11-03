@@ -68,10 +68,9 @@ class SolverBase():
     def load_settings(self, s):
         ## mesh and boundary
         self.boundary_conditions = s['boundary_conditions']
-        self.degree = 1
         if ('mesh' in s) and s['mesh']:
             if isinstance(s['mesh'], (str, unicode)):
-                self.read_mesh(s['mesh'])
+                self.read_mesh(s['mesh'])  # it also read boundary
             elif isinstance(s['mesh'], (Mesh,)):
                 self.mesh = s['mesh']
                 self.generate_boundary_facets()
@@ -82,6 +81,7 @@ class SolverBase():
             self.generate_function_space(s['periodic_boundary'])
         elif ('mesh' not in s or s['mesh']==None) and ('function_space' in s and s['function_space']):
             self.function_space = s['function_space']
+            self.degree = 1  # TODO: how to get degree from self.function_space?
             self.mesh = self.function_space.mesh()
             self.generate_boundary_facets()
         else:
@@ -167,7 +167,10 @@ class SolverBase():
         plot(self.boundary_facets, "boundary facets colored by ID")
 
     def generate_function_space(self, periodic_boundary):
-        self.degree = 1  # TODO: get degree from settings
+        if 'element_degree' in self.settings:
+            self.degree = self.settings['element_degree']
+        else:
+            self.degree = 1
         try:
             if periodic_boundary:
                 self.function_space = FunctionSpace(self.mesh, "CG", self.degree, constrained_domain=periodic_boundary)
@@ -186,25 +189,36 @@ class SolverBase():
             bc['boundary'].mark(boundary_facets, bc['boundary_id'])
         self.boundary_facets = boundary_facets
 
-    def translate_value(self, value):
-        W = self.function_space
+    def translate_value(self, value, function_space = None):
+        # for both internal and boundary values
+        _degree = self.degree
+        if function_space:
+            W = function_space
+        else:
+            W = self.function_space
         if isinstance(value, (tuple, list)):  # json dump tuple into list
-            if len(value) >= self.dimension:
+            if len(value) >= self.dimension and isinstance(value[0], (numbers.Number)):
                 values_0 = Constant(value)
+            elif len(value) >= self.dimension and isinstance(value[0], (unicode, str)):
+                values_0 = interpolate(Expression(value, degree = _degree), W)
             else:
                 values_0 = value  # fixme!!!
-        elif isinstance(value, (Constant, Expression)):
-            values_0 = value  # leave it as it is
         elif  isinstance(value, (numbers.Number)):
-            values_0 = Constant(value)  # leave it as it is
+            values_0 = Constant(value)
+        elif isinstance(value, (Constant,  Function)):  # CellFunction isinstance of Function???
+            values_0 = value  # leave it as it is, since they can be used in equation
+        elif isinstance(value, (Expression, )): 
+            values_0 = interpolate(Expression(value, degree = _degree), W)
         elif isinstance(value, (str, unicode)):
             if os.path.exists(value):
-                #also possible continue from existent solution, or interpolate from diff mesh density
-                values_0  << value
+                # also possible continue from existent solution, or interpolate from diff mesh density
+                values_0 = Function(W)
+                File(value) >> values_0
+                #project(velocity, self.vector_space)  # FIXME: diff element degree is not tested
                 import fenicstools
                 values_0 = fenicstools.interpolate_nonmatching_mesh(values_0 , W)
             else:  # C++ expressing string
-                values_0 = interpolate(Expression(value), W) 
+                values_0 = interpolate(Expression(value, degree = _degree), W) 
         else:
             raise TypeError(' {} is supplied, not tuple, number, Constant,file name, Expression'.format(type(value)))
             #values_0 = None
@@ -237,9 +251,9 @@ class SolverBase():
         trial_function = TrialFunction(self.function_space)
         test_function = TestFunction(self.function_space)
         # Define functions for transient loop
-        up_0 = self.get_internal_field()  # init to default or user provided constant
+        up_current = self.get_internal_field()  # init to default or user provided constant
         up_prev = Function(self.function_space)
-        up_prev.assign(up_0)
+        up_prev.assign(up_current)
         ts = self.transient_settings
 
         # Define a parameters for a stationary loop
@@ -261,11 +275,12 @@ class SolverBase():
                 dt = 1
 
             ## overloaded by derived classes, maybe move out of temporal loop if boundary does not change form
-            F, Dirichlet_bcs_up = self.generate_form(time_iter_, trial_function, test_function, up_0, up_prev)
+            # only NS equation needs current value to build form
+            F, Dirichlet_bcs_up = self.generate_form(time_iter_, trial_function, test_function, up_current, up_prev)
 
-            up_prev.assign(up_0)  #
-            up_0 = self.solve_static(F, up_0, Dirichlet_bcs_up)
-
+            up_prev.assign(up_current)  #
+            up_current = self.solve_static(F, up_current, Dirichlet_bcs_up)  # solve for each time step, up_prev tis not needed
+            #plot(up_current, title = "Value at time: " + str(t))
             print("Current time = ", t, " TimerSolveAll = ", timer_solver_all.elapsed())
             # stop for steady case, or update time
             if not self.transient_settings['transient']:
@@ -275,20 +290,63 @@ class SolverBase():
         ## end of time loop
         timer_solver_all.stop()
 
-        return up_0
+        return up_current
 
     ####################################
-    def solve_iteratively(self, F, Dirichlet_bcs, u):
+    def solve_linear_problem(self, F, u, Dirichlet_bcs):
+        """
+        a_T, L_T = system(F)
+        A_T = assemble(a_T)
+
+        b_T = assemble(L_T)
+        #for bc in bcs: print(type(bc))
+        [bc.apply(A_T, b_T) for bc in bcs]  # apply Dirichlet BC
+        solver = 
+        self.set_solver_parameters(solver)
+
+        solver.solve(A_T, T.vector(), b_T)
+        """
         problem = LinearVariationalProblem(lhs(F), rhs(F), u, Dirichlet_bcs)
         solver = LinearVariationalSolver(problem)
-
-        solver.parameters["linear_solver"] = 'default'
-        solver.parameters["preconditioner"] = 'default'
+        self.set_solver_parameters(solver)
 
         solver.solve()
         return u
 
-    def solve_amg(self, F, bcs, u):
+    def set_solver_parameters(self, solver):
+        # Define a dolfin linear algobra solver parameters
+        if dolfin.MPI.size(dolfin.mpi_comm_world())>1:
+            using_MPI = True
+        else:
+            using_MPI = False
+
+        parameters["linear_algebra_backend"] = "PETSc"  #UMFPACK: out of memory, PETSc divergent
+        #parameters["linear_algebra_backend"] = "Eigen"  # 'uBLAS' is not supported any longer
+
+        parameters["mesh_partitioner"] = "SCOTCH"
+        #parameters["form_compiler"]["representation"] = "quadrature"
+        parameters["form_compiler"]["optimize"] = True
+        """
+        #solver.parameters["linear_solver"] = 'default'
+        #solver.parameters["preconditioner"] = 'default'
+        if using_MPI:
+            #parameters['linear_solver'] = 'bicgstab'  # "gmres" # not usable in MPI
+            parameters['preconditioner']= "hypre_euclid"
+        else:
+            #parameters['linear_solver'] = 'default'  # is not a parameter for LinearProblemSolver
+            parameters['preconditioner'] = "default"  # 'default', ilu only works in serial
+        """
+        """
+        for key in self.solver_settings['solver_parameters']:
+            solver.parameters[key] = self.solver_settings['solver_parameters'][key]
+        #param = self.solver_settings['solver_parameters']
+        # these are only for iterative solver, the default solver, lusolver, neeed not such setttings
+        #solver.parameters["relative_tolerance"] = param["relative_tolerance"] 
+        #solver.parameters["maximum_iterations"] = param["maximum_iterations"]
+        #solver.parameters["monitor_convergence"] = param["monitor_convergence"]
+        """
+
+    def solve_amg(self, F, u, bcs):
         A, b = assemble_system(lhs(F), rhs(F), bcs)
         # Create near null space basis (required for smoothed aggregation AMG).
         # The solution vector is passed so that it can be copied to generate compatible vectors for the nullspace.
