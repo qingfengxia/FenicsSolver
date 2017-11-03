@@ -28,9 +28,17 @@ class ScalerEquationSolver(SolverBase):
         else:
             self.scaler_name = "temperature"
 
-        if 'convective_velocity' in self.settings:
+        if 'radiation_settings' in self.settings:
+            self.radiation_settings = self.settings['radiation_settings']
+            self.has_radiation = True
+        else:
+            self.has_radiation = False
+
+        if 'convective_velocity' in self.settings and self.settings['convective_velocity']:
+            self.has_convection = True
             self.convective_velocity = self.settings['convective_velocity']
         else:
+            self.has_convection = False
             self.convective_velocity = None
 
     def capacity(self):
@@ -49,7 +57,6 @@ class ScalerEquationSolver(SolverBase):
     def conductivity(self):
         if 'conductivity' in self.material:
             return self.material['conductivity']
-        # if not found, calc it
         if self.scaler_name == "temperature":
             return self.material['thermal_conductivity']
         raise SolverError('conductivity material property is not found for {}'.format(self.scaler_name))
@@ -60,7 +67,15 @@ class ScalerEquationSolver(SolverBase):
             v0 = interpolate(v0, self.function_space)
         return v0
 
-    def generate_form(self, time_iter_, T, Tq, T_0, T_prev):
+    def get_convective_velocity_function(self, convective_velocity):
+        self.vector_space = VectorFunctionSpace(self.mesh, 'CG', self.degree+1)
+        vel = self.translate_value(convective_velocity, self.vector_space)
+        #vel = interpolate(Expression(('x[0]', 'x[1]'), degree = 1), self.vector_space)
+        #vel = Constant((1.0, 1.0))
+        print("vel.ufl_shape", vel.ufl_shape)
+        return vel
+
+    def generate_form(self, time_iter_, T, Tq, T_current, T_prev):
         #T = TrialFunction(self.function_space)  # todo: could be shared beween time step
         #Tq = TestFunction(self.function_space)  # todo: could be shared beween time step
         normal = FacetNormal(self.mesh)
@@ -69,6 +84,7 @@ class ScalerEquationSolver(SolverBase):
         bcs = []
         integrals_N = []  # heat flux
         k = self.conductivity() # constant, experssion or tensor
+        capacity = self.capacity()  # density * specific capacity -> volumetrical capacity
 
         # TODO: split into a new function update_boundary
         # boundary type is defined in FreeCAD FemConstraintFluidBoundary and its TaskPanel
@@ -98,52 +114,71 @@ class ScalerEquationSolver(SolverBase):
             else:
                 raise SolverError('boundary type`{}` is not supported'.format(bc['type']))
 
-        # Energy equation
+        if self.scaler_name == "temperature" and self.has_radiation:
+            Stanfen_constant = 5.670367e-8  # W/m-2/K-4
+            emissivity = self.material['emissivity']
+            T_ambient_radiaton = self.radiation_settings['ambient_temperature']
+            m_ = emissivity * Stanfen_constant 
+            integrals_N.append(m_*(T-T_ambient_radiaton)**4*Tq*ds)   # for all surface, without considering view angle
+
+        # poission equation
         def F_static(T, Tq):
             F =  inner(k * grad(T), grad(Tq))*dx
-            if self.convective_velocity:  # convective heat conduction
-                self.vector_space = VectorFunctionSpace(self.function_space.mesh(), 'CG', self.degree)
-                vel = project(self.convective_velocity, self.vector_space)
-                F += inner(inner(k * grad(T), vel), Tq)*dx # support k as tensor for anisotropy conductivity
             F -= sum(integrals_N)
             if self.body_source:
                 F -= self.body_source*Tq*dx
             return F
 
-        if self.transient_settings['transient']:
-            dt = self.get_time_step(time_iter_)
-            theta = Constant(0.5) # Crank-Nicolson time scheme
-            # Define time discretized equation, it depends on scaler type:  Energy, Species,
-            capacity = self.capacity(time_iter_)
-            F = capacity * (1.0/dt)*inner(T-T_prev, Tq)*dx \
-                   + theta*F_static(T, Tq) + (1.0-theta)*F_static(T_0, Tq)
+        def F_convective():  # only transient is supported
+            h = CellSize(self.mesh)  # what is that?
+            c = k / capacity  # diffusivity
+            if self.transient_settings['transient']:
+                dt = self.get_time_step(time_iter_)
+                # Mid-point solution
+                T_mid = 0.5*(T_prev + T)
+                velocity = self.get_convective_velocity_function(self.convective_velocity)
+                # Residual
+                res = (T - T_prev) + dt*(dot(velocity, grad(T_mid)) - c*div(grad(T_mid)))  # does not support conductivity tensor
+                # Galerkin variational problem
+                F = Tq*(T - T_prev)*dx + dt*(Tq*dot(velocity, grad(T_mid))*dx + c*dot(grad(Tq), grad(T_mid))*dx)
+                if self.body_source:
+                    res -= self.body_source * Constant(dt/capacity)
+                    #F -= self.body_source*Tq*dx * (dt / capacity)  # why F does not substract body?
+
+                F -= sum(integrals_N) * Constant(dt/capacity)
+            else:
+                T_mid = T
+                velocity = self.get_convective_velocity_function(self.convective_velocity)
+                # Residual
+                res = dot(velocity, grad(T_mid)) - c*div(grad(T_mid))
+                print(res)
+                # Galerkin variational problem
+                F = Tq*dot(velocity, grad(T_mid))*dx + c*dot(grad(Tq), grad(T_mid))*dx
+                if self.body_source:
+                    res -= self.body_source * Constant(1.0 / capacity)
+                    #F -= self.body_source*Tq*dx * capacity  # why F does not substract body?
+                F -= sum(integrals_N) * Constant(1.0 / capacity)
+            # Add SUPG stabilisation terms
+            vnorm = sqrt(dot(velocity, velocity))
+            F += (h/(2.0*vnorm))*dot(velocity, grad(Tq))*res*dx
+            return F
+
+        if self.convective_velocity:  # convective heat conduction
+            F = F_convective()
         else:
-            F = F_static(T, Tq)
-        #print(F)
+            if self.transient_settings['transient']:
+                dt = self.get_time_step(time_iter_)
+                theta = Constant(0.5) # Crank-Nicolson time scheme
+                # Define time discretized equation, it depends on scaler type:  Energy, Species,
+                F = capacity * (1.0/dt)*inner(T-T_prev, Tq)*dx \
+                       + theta*F_static(T, Tq) + (1.0-theta)*F_static(T_prev, Tq)  # FIXME:  check using T_0 or T_prev ? 
+            else:
+                F = F_static(T, Tq)
+            #print(F)
         return F, bcs
 
-    def solve_static(self, F, T, bcs=[]):
-        # solving
-        a_T, L_T = system(F)
-        A_T = assemble(a_T)
-
-        parameters = self.solver_settings['solver_parameters']
-        # solver and parameters are defined by solver_parameters dict
-        if has_petsc():
-            solver_T= PETScKrylovSolver('default', 'default')
-        else:
-            solver_T= KrylovSolver('default', 'default')  # 'gmres', 'ilu', not working with MPI
-        solver_T.parameters["relative_tolerance"] = parameters["relative_tolerance"] 
-        solver_T.parameters["maximum_iterations"] = parameters["maximum_iterations"]
-        solver_T.parameters["monitor_convergence"] = parameters["monitor_convergence"]
-
-        b_T = assemble(L_T)
-        #for bc in bcs: print(type(bc))
-        [bc.apply(A_T, b_T) for bc in bcs]  # apply Dirichlet BC
-
-        solver_T.solve(A_T, T.vector(), b_T)
-
-        return T
+    def solve_static(self, F, T, bcs):
+        return self.solve_linear_problem(F, T, bcs)
 
     ############## public API ##########################
     def solve(self):

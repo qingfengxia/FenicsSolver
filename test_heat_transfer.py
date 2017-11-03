@@ -29,9 +29,12 @@ from dolfin import *
 from ScalerEquationSolver import ScalerEquationSolver
 
 def test(using_anisotropic_conductivity = True):
+    using_convective_velocity = not using_anisotropic_conductivity
     #mesh = UnitCubeMesh(20, 20, 20)
-    mesh = UnitSquareMesh(20, 20)
+    mesh = UnitSquareMesh(40, 40)
     Q = FunctionSpace(mesh, "CG", 1)
+    print(dir(Q))
+    print(dir(Q.element))
 
     cx_min, cy_min, cx_max, cy_max = 0,0,1,1
     # no need for on_boundary, it should capture the boundary
@@ -40,9 +43,9 @@ def test(using_anisotropic_conductivity = True):
     left = AutoSubDomain(lambda x:  near(x[0], cx_min) )
     right = AutoSubDomain(lambda x: near(x[0],cx_max))
 
-    T_hot = 60
-    T_cold = 30
-    T_ambient = 0
+    T_hot = 360
+    T_cold = 300
+    T_ambient = 300
     conductivity = 0.6
     length = cy_max - cy_min
     heat_flux = (T_hot-T_cold)/length*conductivity  # divided by length scale which is unity 1 ->  heat flux W/m^2
@@ -102,33 +105,40 @@ def test(using_anisotropic_conductivity = True):
         """
     else:
         K = conductivity
-        htc = heat_flux / (T_cold - T_ambient)
+        htc = heat_flux / (T_hot - T_cold)
         print("analytical heat flux [w/m^2] = ", heat_flux)
 
-    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant(T_cold)}
-    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'heatFlux', 'value': Constant(heat_flux)}
+    #if using_convective_velocity:
+    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant(T_cold)}
+
+    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'heatFlux', 'value': Constant(heat_flux)}
     #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Robin', 'value': (Constant(T_ambient), Constant(htc))}
 
     settings = {'solver_name': 'ScalerEquationSolver',
-                    'mesh': None, 'function_space': Q, 'periodic_boundary': None, 
+                    'mesh': None, 'function_space': Q, 'periodic_boundary': None, 'element_degree': 1,
                     'boundary_conditions': bcs, 'body_source': None, 
-                    'initial_values': {'temperature': 300},
-                    'material':{}, 
+                    'initial_values': {'temperature': T_ambient},
+                    'material':{'density': 1000, 'specific_heat_capacity': 4200, 'conductivity':  0.1}, 
                     'solver_settings': {
-                        'transient_settings': {'transient': False, 'starting_time': 0, 'time_step': 0.01, 'ending_time': 0.03},
-                        'reference_values': {'temperature': 300},
-                        'solver_parameters': {"relative_tolerance": 1e-5,  # mapping to solver.parameters of Fenics
+                        'transient_settings': {'transient': False, 'starting_time': 0, 'time_step': 0.1, 'ending_time': 1},
+                        'reference_values': {'temperature': T_ambient},
+                        'solver_parameters': {"relative_tolerance": 1e-9,  # mapping to solver.parameters of Fenics
                                                         "maximum_iterations": 500,
-                                                        "monitor_convergence": False,  # print to console
+                                                        "monitor_convergence": True,  # print to console
                                                         },
                         },
                     # solver specific settings
                     'scaler_name': 'temperature',
-                    "convective_velocity": Constant((0.1, 0))
                     }
 
+    #
+    if using_convective_velocity:
+        settings['convective_velocity'] =  Constant((0.5, -0.5))
+    else:
+        settings['convective_velocity'] = None
     solver = ScalerEquationSolver(settings)
     solver.material['conductivity'] = K
+
     T = solver.solve()
 
     # Report flux, they should match
@@ -147,4 +157,4 @@ def test(using_anisotropic_conductivity = True):
     interactive()
 
 if __name__ == '__main__':
-    test()
+    test(False)
