@@ -28,81 +28,102 @@ from dolfin import *
 
 from ScalerEquationSolver import ScalerEquationSolver
 
+#mesh = UnitCubeMesh(20, 20, 20)
+mesh = UnitSquareMesh(40, 40)
+Q = FunctionSpace(mesh, "CG", 1)
+#print(dir(Q))
+#print(dir(Q._ufl_element))
+#print(Q._ufl_element.degree())
+
+cx_min, cy_min, cx_max, cy_max = 0,0,1,1
+# no need for on_boundary, it should capture the boundary
+top = AutoSubDomain(lambda x:  near(x[1], cy_max) )
+bottom = AutoSubDomain(lambda x: near(x[1],cy_min))
+left = AutoSubDomain(lambda x:  near(x[0], cx_min) )
+right = AutoSubDomain(lambda x: near(x[0],cx_max))
+
+T_hot = 360
+T_cold = 300
+T_ambient = 300
+conductivity = 0.6
+length = cy_max - cy_min
+heat_flux = (T_hot-T_cold)/length*conductivity  # divided by length scale which is unity 1 ->  heat flux W/m^2
+
+bcs = { 
+        "hot": {'boundary': top, 'boundary_id': 1, 'type': 'Dirichlet', 'value': Constant(T_hot)}, 
+        "left":  {'boundary': left, 'boundary_id': 3, 'type': 'heatFlux', 'value': Constant(0)}, # unit: K/m
+        "right":  {'boundary': right, 'boundary_id': 4, 'type': 'heatFlux', 'value': Constant(0)}, 
+        #back and front is zero gradient, need not set, it is default
+}
+
+settings = {'solver_name': 'ScalerEquationSolver',
+                'mesh': None, 'function_space': Q, 'periodic_boundary': None, 'element_degree': 1,
+                'boundary_conditions': bcs, 'body_source': None, 
+                'initial_values': {'temperature': T_ambient},
+                'material':{'density': 1000, 'specific_heat_capacity': 4200, 'conductivity':  0.1}, 
+                'solver_settings': {
+                    'transient_settings': {'transient': False, 'starting_time': 0, 'time_step': 0.1, 'ending_time': 1},
+                    'reference_values': {'temperature': T_ambient},
+                    'solver_parameters': {"relative_tolerance": 1e-9,  # mapping to solver.parameters of Fenics
+                                                    "maximum_iterations": 500,
+                                                    "monitor_convergence": True,  # print to console
+                                                    },
+                    },
+                # solver specific settings
+                'scaler_name': 'temperature',
+                }
+
+K_anisotropic = Expression((('exp(x[0])','sin(x[1])'), ('sin(x[0])','tan(x[1])')), degree=0)  #works!
+"""
+# Create mesh functions for c00, c01, c11
+c00 = MeshFunction("double", mesh, 2)  # degree/dim == 2?
+c11 = MeshFunction("double", mesh, 2)
+c22 = MeshFunction("double", mesh, 2)
+for cell in cells(mesh):
+    c00[cell] = conductivity
+    c11[cell] = conductivity*0.1
+    c22[cell] = conductivity*0.1
+# Code for C++ evaluation of conductivity
+conductivity_code = '''
+
+class Conductivity : public Expression
+{
+public:
+
+  // Create expression with 3 components
+  Conductivity() : Expression(3) {}
+
+  // Function for evaluating expression on each cell
+  void eval(Array<double>& values, const Array<double>& x, const ufc::cell& cell) const
+  {
+    const uint D = cell.topological_dimension;
+    const uint cell_index = cell.index;
+    values[0] = (*c00)[cell_index];
+    values[1] = (*c11)[cell_index];
+    values[2] = (*c22)[cell_index];
+  }
+
+  // The data stored in mesh functions
+  std::shared_ptr<MeshFunction<double> > c00;
+  std::shared_ptr<MeshFunction<double> > c11;
+  std::shared_ptr<MeshFunction<double> > c22;
+
+};
+'''
+
+c = Expression(cppcode=conductivity_code, degree=0)
+c.c00 = c00
+c.c11 = c11
+c.c22 = c22
+K = as_matrix(((c[0], c[1]), (c[1], c[2])))
+"""
+
 def test(using_anisotropic_conductivity = True):
     using_convective_velocity = not using_anisotropic_conductivity
-    #mesh = UnitCubeMesh(20, 20, 20)
-    mesh = UnitSquareMesh(40, 40)
-    Q = FunctionSpace(mesh, "CG", 1)
-    print(dir(Q))
-    print(dir(Q.element))
-
-    cx_min, cy_min, cx_max, cy_max = 0,0,1,1
-    # no need for on_boundary, it should capture the boundary
-    top = AutoSubDomain(lambda x:  near(x[1], cy_max) )
-    bottom = AutoSubDomain(lambda x: near(x[1],cy_min))
-    left = AutoSubDomain(lambda x:  near(x[0], cx_min) )
-    right = AutoSubDomain(lambda x: near(x[0],cx_max))
-
-    T_hot = 360
-    T_cold = 300
-    T_ambient = 300
-    conductivity = 0.6
-    length = cy_max - cy_min
-    heat_flux = (T_hot-T_cold)/length*conductivity  # divided by length scale which is unity 1 ->  heat flux W/m^2
-
-    bcs = { 
-            "hot": {'boundary': top, 'boundary_id': 1, 'type': 'Dirichlet', 'value': Constant(T_hot)}, 
-            "left":  {'boundary': left, 'boundary_id': 3, 'type': 'heatFlux', 'value': Constant(0)}, # unit: K/m
-            "right":  {'boundary': right, 'boundary_id': 4, 'type': 'heatFlux', 'value': Constant(0)}, 
-            #back and front is zero gradient, need not set, it is default
-    }
 
     if using_anisotropic_conductivity:
         #tensor-weighted-poisson/python/demo_tensor-weighted-poisson.py
-        K = Expression((('exp(x[0])','sin(x[1])'), ('sin(x[0])','tan(x[1])')), degree=0)  #works!
-        """
-        # Create mesh functions for c00, c01, c11
-        c00 = MeshFunction("double", mesh, 2)  # degree/dim == 2?
-        c11 = MeshFunction("double", mesh, 2)
-        c22 = MeshFunction("double", mesh, 2)
-        for cell in cells(mesh):
-            c00[cell] = conductivity
-            c11[cell] = conductivity*0.1
-            c22[cell] = conductivity*0.1
-        # Code for C++ evaluation of conductivity
-        conductivity_code = '''
-
-        class Conductivity : public Expression
-        {
-        public:
-
-          // Create expression with 3 components
-          Conductivity() : Expression(3) {}
-
-          // Function for evaluating expression on each cell
-          void eval(Array<double>& values, const Array<double>& x, const ufc::cell& cell) const
-          {
-            const uint D = cell.topological_dimension;
-            const uint cell_index = cell.index;
-            values[0] = (*c00)[cell_index];
-            values[1] = (*c11)[cell_index];
-            values[2] = (*c22)[cell_index];
-          }
-
-          // The data stored in mesh functions
-          std::shared_ptr<MeshFunction<double> > c00;
-          std::shared_ptr<MeshFunction<double> > c11;
-          std::shared_ptr<MeshFunction<double> > c22;
-
-        };
-        '''
-
-        c = Expression(cppcode=conductivity_code, degree=0)
-        c.c00 = c00
-        c.c11 = c11
-        c.c22 = c22
-        K = as_matrix(((c[0], c[1]), (c[1], c[2])))
-        """
+        K = K_anisotropic
     else:
         K = conductivity
         htc = heat_flux / (T_hot - T_cold)
@@ -110,28 +131,9 @@ def test(using_anisotropic_conductivity = True):
 
     #if using_convective_velocity:
     bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant(T_cold)}
-
     #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'heatFlux', 'value': Constant(heat_flux)}
-    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Robin', 'value': (Constant(T_ambient), Constant(htc))}
+    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Robin', 'value': Constant(htc), 'ambient': Constant(T_ambient)}
 
-    settings = {'solver_name': 'ScalerEquationSolver',
-                    'mesh': None, 'function_space': Q, 'periodic_boundary': None, 'element_degree': 1,
-                    'boundary_conditions': bcs, 'body_source': None, 
-                    'initial_values': {'temperature': T_ambient},
-                    'material':{'density': 1000, 'specific_heat_capacity': 4200, 'conductivity':  0.1}, 
-                    'solver_settings': {
-                        'transient_settings': {'transient': False, 'starting_time': 0, 'time_step': 0.1, 'ending_time': 1},
-                        'reference_values': {'temperature': T_ambient},
-                        'solver_parameters': {"relative_tolerance": 1e-9,  # mapping to solver.parameters of Fenics
-                                                        "maximum_iterations": 500,
-                                                        "monitor_convergence": True,  # print to console
-                                                        },
-                        },
-                    # solver specific settings
-                    'scaler_name': 'temperature',
-                    }
-
-    #
     if using_convective_velocity:
         settings['convective_velocity'] =  Constant((0.5, -0.5))
     else:
@@ -140,7 +142,9 @@ def test(using_anisotropic_conductivity = True):
     solver.material['conductivity'] = K
 
     T = solver.solve()
+    post_process(T)
 
+def post_process(T):
     # Report flux, they should match
     normal = FacetNormal(mesh)
     boundary_facets = FacetFunction('size_t', mesh)
@@ -148,13 +152,35 @@ def test(using_anisotropic_conductivity = True):
     id=1
     bottom.mark(boundary_facets, id)
     ds= Measure("ds", subdomain_data=boundary_facets)
-    if not using_anisotropic_conductivity:
-        flux = assemble(K*dot(grad(T), normal)*ds(id))
-        print("tuft heat flux rate integral on the surface(w/m^2)", flux)
+
+    flux = assemble(conductivity * dot(grad(T), normal)*ds(id))
+    print("tuft heat flux rate integral on the surface(w/m^2)", flux)
 
     plot(T, title='Temperature')
     #plot(mesh)
     interactive()
 
+def test_radiation(using_anisotropic_conductivity = True):
+    if using_anisotropic_conductivity:
+        #tensor-weighted-poisson/python/demo_tensor-weighted-poisson.py
+        K = K_anisotropic
+    else:
+        K = conductivity
+        htc = heat_flux / (T_hot - T_cold)
+        print("analytical heat flux [w/m^2] = ", heat_flux)
+
+    #if using_convective_velocity:
+    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant(T_cold+30)}
+    settings['radiation_settings'] = {'ambient_temperature': T_ambient, 'emissivity': 0.9}
+    settings['convective_velocity'] = None
+    solver = ScalerEquationSolver(settings)
+    solver.material['conductivity'] = K
+    solver.material['emissivity'] = 0.9
+
+    T = solver.solve()
+    post_process(T)
+
 if __name__ == '__main__':
+    #test(True)
     test(False)
+    #test_radiation(False)  # divergent

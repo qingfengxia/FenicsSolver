@@ -72,7 +72,7 @@ class ScalerEquationSolver(SolverBase):
         vel = self.translate_value(convective_velocity, self.vector_space)
         #vel = interpolate(Expression(('x[0]', 'x[1]'), degree = 1), self.vector_space)
         #vel = Constant((1.0, 1.0))
-        print("vel.ufl_shape", vel.ufl_shape)
+        #print("vel.ufl_shape", vel.ufl_shape)
         return vel
 
     def generate_form(self, time_iter_, T, Tq, T_current, T_prev):
@@ -80,7 +80,8 @@ class ScalerEquationSolver(SolverBase):
         #Tq = TestFunction(self.function_space)  # todo: could be shared beween time step
         normal = FacetNormal(self.mesh)
 
-        ds= Measure("ds", subdomain_data=self.boundary_facets)  # normal direction
+        dx= Measure("dx", subdomain_data=self.subdomains)  # 
+        ds= Measure("ds", subdomain_data=self.boundary_facets)
         bcs = []
         integrals_N = []  # heat flux
         k = self.conductivity() # constant, experssion or tensor
@@ -109,24 +110,27 @@ class ScalerEquationSolver(SolverBase):
                 bcs.append(dbc)
             elif bc['type'] == 'Robin' or bc['type'] == 'HTC':  # FIXME: HTC is not a general name
                 #Robin, how to get the boundary value,  T as the first, HTC as the second
-                Ta, htc = bc['value']  # must be specified in Constant or Expressed in setup dict
+                Ta, htc = bc['ambient'], bc['value']  # must be specified in Constant or Expressed in setup dict
                 integrals_N.append( htc*(Ta-T)*Tq*ds(i))
             else:
                 raise SolverError('boundary type`{}` is not supported'.format(bc['type']))
 
-        if self.scaler_name == "temperature" and self.has_radiation:
-            Stanfen_constant = 5.670367e-8  # W/m-2/K-4
-            emissivity = self.material['emissivity']
-            T_ambient_radiaton = self.radiation_settings['ambient_temperature']
-            m_ = emissivity * Stanfen_constant 
-            integrals_N.append(m_*(T-T_ambient_radiaton)**4*Tq*ds)   # for all surface, without considering view angle
+        def get_source_item():
+            if isinstance(self.body_source, dict):
+                S = []
+                for k,v in self.get_body_source().items():
+                    S.append(v['value']*Tq*dx(v['subdomain_id']))
+                return sum(S)
+            else:
+                if self.body_source:
+                    return  self.get_body_source()*Tq*dx
+                else:
+                    return None
 
         # poission equation
         def F_static(T, Tq):
             F =  inner(k * grad(T), grad(Tq))*dx
             F -= sum(integrals_N)
-            if self.body_source:
-                F -= self.body_source*Tq*dx
             return F
 
         def F_convective():  # only transient is supported
@@ -142,7 +146,7 @@ class ScalerEquationSolver(SolverBase):
                 # Galerkin variational problem
                 F = Tq*(T - T_prev)*dx + dt*(Tq*dot(velocity, grad(T_mid))*dx + c*dot(grad(Tq), grad(T_mid))*dx)
                 if self.body_source:
-                    res -= self.body_source * Constant(dt/capacity)
+                    res -= get_source_item() * Constant(dt/capacity)
                     #F -= self.body_source*Tq*dx * (dt / capacity)  # why F does not substract body?
 
                 F -= sum(integrals_N) * Constant(dt/capacity)
@@ -150,14 +154,15 @@ class ScalerEquationSolver(SolverBase):
                 T_mid = T
                 velocity = self.get_convective_velocity_function(self.convective_velocity)
                 # Residual
-                res = dot(velocity, grad(T_mid)) - c*div(grad(T_mid))
-                print(res)
+                res = dot(velocity, grad(T_mid)) * capacity - k*div(grad(T_mid))
+                #print(res)
                 # Galerkin variational problem
-                F = Tq*dot(velocity, grad(T_mid))*dx + c*dot(grad(Tq), grad(T_mid))*dx
+                F = capacity * Tq*dot(velocity, grad(T_mid))*dx + \
+                    k*dot(grad(Tq), grad(T_mid))*dx
                 if self.body_source:
-                    res -= self.body_source * Constant(1.0 / capacity)
+                    res -= get_source_item()
                     #F -= self.body_source*Tq*dx * capacity  # why F does not substract body?
-                F -= sum(integrals_N) * Constant(1.0 / capacity)
+                F -= sum(integrals_N) 
             # Add SUPG stabilisation terms
             vnorm = sqrt(dot(velocity, velocity))
             F += (h/(2.0*vnorm))*dot(velocity, grad(Tq))*res*dx
@@ -174,11 +179,47 @@ class ScalerEquationSolver(SolverBase):
                        + theta*F_static(T, Tq) + (1.0-theta)*F_static(T_prev, Tq)  # FIXME:  check using T_0 or T_prev ? 
             else:
                 F = F_static(T, Tq)
-            #print(F)
+            #print(F, get_source_item())
+            if self.body_source:
+                F -= get_source_item()
+
+        if self.scaler_name == "temperature" and self.has_radiation:
+            Stefan_constant = 5.670367e-8  # W/m-2/K-4
+            if 'emissivity' in self.material:
+                emissivity = self.material['emissivity']  # self.settings['radiation_settings']['emissivity'] 
+            else:
+                emissivity = 1.0
+            T_ambient_radiaton = self.radiation_settings['ambient_temperature']
+            m_ = emissivity * Stefan_constant
+            radiation_flux = m_*(pow(T, 4) - T_ambient_radiaton**4)  # it is nonlinear item
+            print(m_, radiation_flux, F)
+            F -= radiation_flux*Tq*ds  # for all surface, without considering view angle
+            F = action(F, T_current)  #API 1.0 still working ; newer API , replacing TrialFunction with Function for nonlinear 
+            self.J = derivative(F, T_current, T)  # Gateaux derivative
         return F, bcs
 
-    def solve_static(self, F, T, bcs):
-        return self.solve_linear_problem(F, T, bcs)
+    def solve_static(self, F, T_current, bcs):
+        if self.scaler_name == "temperature" and self.has_radiation:
+            return self.solve_nonlinear_problem(F, T_current, bcs, self.J)
+            """
+            Stefan_constant = 5.670367e-8  # W/m-2/K-4
+            emissivity = self.material['emissivity']
+            T_ambient_radiaton = self.radiation_settings['ambient_temperature']
+            m_ = emissivity * Stefan_constant
+            #radiation_flux = interpolate(Expression("m_*(T - T_a)**4", m_ = m_, T= T, T_a = T_ambient_radiaton, \
+            #        degree = self.degree), self.function_space)
+
+            max_nonlinear_iteratons = 10
+            T_ = Function(self.function_space)
+            T_.assign(T_current)
+            for i in range(max_nonlinear_iteratons):
+                radiation_flux = m_*(pow(T_, 4) - T_ambient_radiaton**4)  # it is nonlinear item
+                F_ = F - radiation_flux*Tq*ds   # for all surface, without considering view angle
+                T_ = self.solve_linear_problem(F_, T_, bcs)
+            return T_
+            """
+        else:
+            return self.solve_linear_problem(F, T_current, bcs)
 
     ############## public API ##########################
     def solve(self):

@@ -23,6 +23,7 @@
 from __future__ import print_function, division
 #import math may cause error
 import numbers
+import copy
 import numpy as np
 import os.path
 
@@ -35,7 +36,7 @@ default_case_settings = {'solver_name': None,
                 'case_name': 'test', 'case_folder': "/tmp/",  'case_file': None,
                 'mesh':  None, 'function_space': None, 'periodic_boundary': None, 
                 'boundary_conditions': None, 
-                'body_source': None,  # can also be a list of material dict for different subdomains [{'subdomain_id': 1, 'value': 2}]
+                'body_source': None,  # dict for different subdomains {"sub_name": {'subdomain_id': 1, 'value': 2}}
                 'initial_values': {},
                 'material':{},  # can be a list of material dict for different subdomains
                 'solver_settings': {
@@ -56,6 +57,7 @@ class SolverBase():
     def __init__(self, case_input):
         if isinstance(case_input, (dict)):
             self.settings = case_input
+            #self.print()
             self.load_settings(case_input)
         else:
             raise SolverError('case setup data must be a python dict')
@@ -81,7 +83,7 @@ class SolverBase():
             self.generate_function_space(s['periodic_boundary'])
         elif ('mesh' not in s or s['mesh']==None) and ('function_space' in s and s['function_space']):
             self.function_space = s['function_space']
-            self.degree = 1  # TODO: how to get degree from self.function_space?
+            self.degree = self.function_space._ufl_element.degree()
             self.mesh = self.function_space.mesh()
             self.generate_boundary_facets()
         else:
@@ -90,7 +92,7 @@ class SolverBase():
 
         ## 
         if 'body_source' in s and s['body_source']:
-            self.body_source = self.translate_value(s['body_source'])
+            self.body_source = s['body_source']
         else:
             self.body_source = None
 
@@ -105,40 +107,39 @@ class SolverBase():
         self.solver_settings = s['solver_settings']
         self.transient_settings = s['solver_settings']['transient_settings']
         self.transient = self.transient_settings['transient']
-        """
-        ts = s['solver_settings']['transient_settings']
-        self.transient = ts['transient']
-        self.starting_time = ts['starting_time']
-        self.time_step = ts['time_step']
-        self.ending_time = ts['ending_time']
-        """
+
 
     def _read_hdf5_mesh(self, filename):
         # path is identical to FenicsSolver.utility 
         mesh = Mesh()
         hdf = HDF5File(mesh.mpi_comm(), filename, "r")
         hdf.read(mesh, "/mesh", False)
+        self.mesh = mesh
+
         self.subdomains = CellFunction("size_t", mesh)
         if (hdf.has_dataset("/subdomains")):
             hdf.read(subdomains, "/subdomains")
         else:
             print('Subdomain file is not provided')
+
         if (hdf.has_dataset("/boundaries")):
             self.boundary_facets = FacetFunction("size_t", mesh)
             hdf.read(self.boundary_facets, "/boundaries")
         else:
             print('Boundary facets file is not provided, marked from boundary settings')
             self.generate_boundary_facets()  # boundary marking from subdomain instance
-        self.mesh = mesh
 
     def _read_xml_mesh(self, filename):
         mesh = Mesh(filename)
         bmeshfile = filename[:-4] + "_facet_region.xml"
+        self.mesh = mesh
+
         if os.path.exists(bmeshfile):
             self.boundary_facets = MeshFunction("size_t", mesh, bmeshfile)
         else:
             print('Boundary facets are not provided by xml input file, boundary will be marked from subdomain instance')
             self.generate_boundary_facets()  # boundary marking from subdomain instance
+
         subdomain_meshfile = filename[:-4] + "_physical_region.xml"
         if os.path.exists(subdomain_meshfile):
             self.subdomains = MeshFunction("size_t", mesh, subdomain_meshfile)
@@ -157,13 +158,14 @@ class SolverBase():
             f.read(mesh, True)
             self.generate_boundary_facets()
             self.subdomains = CellFunction("size_t", mesh)
+            self.mesh = mesh
         elif filename[-4:] == ".xml":
             self._read_xml_mesh(filename)
         elif filename[-3:] == ".h5" or filename[-5:] == ".hdf5":
             self._read_hdf5_mesh(filename)
         else:
             raise SolverError('mesh or function space must specified to construct solver object')
-        self.mesh = mesh
+
         plot(self.boundary_facets, "boundary facets colored by ID")
 
     def generate_function_space(self, periodic_boundary):
@@ -196,20 +198,24 @@ class SolverBase():
             W = function_space
         else:
             W = self.function_space
-        if isinstance(value, (tuple, list)):  # json dump tuple into list
+        if isinstance(value, (tuple,)):  # FIXME: json dump tuple into list, 
             if len(value) >= self.dimension and isinstance(value[0], (numbers.Number)):
                 values_0 = Constant(value)
-            elif len(value) >= self.dimension and isinstance(value[0], (unicode, str)):
+            elif len(value) >= self.dimension and isinstance(value[0], (str)):
                 values_0 = interpolate(Expression(value, degree = _degree), W)
             else:
-                values_0 = value  # fixme!!!
+                raise TypeError(' {} is supplied, but only tuple of number and string expr are supported'.format(type(value)))
+        elif  isinstance(value, (list, np.ndarray)) and len(value) > self.current_step:
+            values_0 = value[self.current_step]
         elif  isinstance(value, (numbers.Number)):
             values_0 = Constant(value)
-        elif isinstance(value, (Constant,  Function)):  # CellFunction isinstance of Function???
+        elif isinstance(value, (Constant, Function)):  # CellFunction isinstance of Function???
             values_0 = value  # leave it as it is, since they can be used in equation
         elif isinstance(value, (Expression, )): 
             values_0 = interpolate(Expression(value, degree = _degree), W)
-        elif isinstance(value, (str, unicode)):
+        elif callable(value):
+            values_0 = value(self.current_time)
+        elif isinstance(value, (str, )):
             if os.path.exists(value):
                 # also possible continue from existent solution, or interpolate from diff mesh density
                 values_0 = Function(W)
@@ -218,33 +224,58 @@ class SolverBase():
                 import fenicstools
                 values_0 = fenicstools.interpolate_nonmatching_mesh(values_0 , W)
             else:  # C++ expressing string
-                values_0 = interpolate(Expression(value, degree = _degree), W) 
+                values_0 = interpolate(Expression(value, degree = _degree), W)
+        elif type(value) == type(None):
+            raise TypeError('None type is supplied')
         else:
             raise TypeError(' {} is supplied, not tuple, number, Constant,file name, Expression'.format(type(value)))
             #values_0 = None
         return values_0
 
     def get_boundary_value(self, bc, time_iter_=None):
-        if self.transient_settings['transient'] and isinstance(bc['value'], list):  # if it is a list but not tuple
-            bvalue = (bc['value'])[time_iter_] #already, interpolated function, should be
+        if self.transient_settings['transient']:
+            if isinstance(bc['value'], list):  # if it is a list but not tuple
+                bvalue = (bc['value'])[time_iter_] #already, interpolated function, should be
+            elif callable(bc['value']): 
+                bvalue = bc['value'](self.get_current_time(time_iter_))
+            else:
+                bvalue = bc['value']
         else:
             bvalue = bc['value']
-        if bc['value'] == 'Robin':  # value is a tuple of 2 element
-            return bvalue
+        return self.translate_value(bvalue, time_iter_)
+
+    def get_body_source(self):
+        if isinstance(self.body_source, (dict)):  # a dict of subdomain, perhaps easier by giving an Expression
+            vdict = copy.copy(self.body_source)
+            for k in vdict:
+                vdict[k]['value'] = self.translate_value(self.body_source[k]['value'])
+            return vdict
         else:
-            return self.translate_value(bvalue)
+            return self.translate_value(self.body_source)
 
     def get_time_step(self, time_iter_):
         ## fixed step, but could be supplied with an np.array/list
         try:
             dt = float(self.transient_settings['time_step'])
         except:
-            if len(self.time_step) >= time_iter_:
-                dt = self.time_step[time_iter_]
+            ts = self.transient_settings['time_series']
+            if len(ts) >= time_iter_:
+                dt = ts[time_iter_] - ts[time_iter_]
             else:
                 print('time step can only be a sequence or scaler')
-        self.mesh.hmin()  # Compute minimum cell diameter. courant number
+        #self.mesh.hmin()  # Compute minimum cell diameter. courant number
         return dt
+
+    def get_current_time(self, time_iter_):
+        try:
+            dt = float(self.transient_settings['time_step'])
+            tp = self.transient_settings['starting_time'] + dt * (time_iter_ - 1)
+        except:
+            if len(self.transient_settings['time_series']) >= time_iter_:
+                tp = self.transient_settings['time_series'][time_iter_]
+            else:
+                print('time point can only be a sequence of time series or derived from constant time step')
+        return tp
 
     def solve_transient(self):
         #
@@ -257,36 +288,36 @@ class SolverBase():
         ts = self.transient_settings
 
         # Define a parameters for a stationary loop
-        t = ts['starting_time']
-        time_iter_ = 0
+        self.current_time = ts['starting_time']
+        self.current_step = 0
         if ts['transient']:
             t_end = ts['ending_time']
         else:
-            t_end = t + 1
+            t_end = self.current_time+ 1
 
-        print(ts, t, t_end)
+        #print(ts, self.current_time, t_end)
         # Transient loop also works for steady, by set `t_end = self.time_step`
         timer_solver_all = Timer("TimerSolveAll")
         timer_solver_all.start()
-        while (t < t_end):
+        while (self.current_time < t_end):
             if ts['transient']:
-                dt = self.get_time_step(time_iter_)
+                dt = self.get_time_step(self.current_step)
             else:
                 dt = 1
 
             ## overloaded by derived classes, maybe move out of temporal loop if boundary does not change form
             # only NS equation needs current value to build form
-            F, Dirichlet_bcs_up = self.generate_form(time_iter_, trial_function, test_function, up_current, up_prev)
+            F, Dirichlet_bcs_up = self.generate_form(self.current_step, trial_function, test_function, up_current, up_prev)
 
             up_prev.assign(up_current)  #
             up_current = self.solve_static(F, up_current, Dirichlet_bcs_up)  # solve for each time step, up_prev tis not needed
             #plot(up_current, title = "Value at time: " + str(t))
-            print("Current time = ", t, " TimerSolveAll = ", timer_solver_all.elapsed())
+            print("Current time = ", self.current_time, " TimerSolveAll = ", timer_solver_all.elapsed())
             # stop for steady case, or update time
             if not self.transient_settings['transient']:
                 break
-            time_iter_ += 1
-            t += dt
+            self.current_step += 1
+            self.current_time += dt
         ## end of time loop
         timer_solver_all.stop()
 
@@ -312,6 +343,14 @@ class SolverBase():
 
         solver.solve()
         return u
+
+    def solve_nonlinear_problem(self, F, u_current, Dirichlet_bcs, J):
+        problem = NonlinearVariationalProblem(F, u_current, Dirichlet_bcs, J)
+        solver = NonlinearVariationalSolver(problem)
+        self.set_solver_parameters(solver)
+
+        solver.solve()
+        return u_current
 
     def set_solver_parameters(self, solver):
         # Define a dolfin linear algobra solver parameters
