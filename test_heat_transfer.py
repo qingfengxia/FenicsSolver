@@ -140,6 +140,9 @@ def test(using_anisotropic_conductivity = True):
         settings['convective_velocity'] = None
     solver = ScalerEquationSolver(settings)
     solver.material['conductivity'] = K
+    #debugging: show boundary selection
+    plot(solver.boundary_facets, "boundary facets colored by ID")
+    plot(solver.subdomains, "subdomain cells colored by ID")
 
     T = solver.solve()
     post_process(T)

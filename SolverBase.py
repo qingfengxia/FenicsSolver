@@ -24,6 +24,7 @@ from __future__ import print_function, division
 #import math may cause error
 import numbers
 import copy
+import logging
 import numpy as np
 import os.path
 
@@ -108,6 +109,28 @@ class SolverBase():
         self.transient_settings = s['solver_settings']['transient_settings']
         self.transient = self.transient_settings['transient']
 
+        if 'report_settings' not in self.settings:
+            self.settings['report_settings'] = {"logging_level":logging.DEBUG,  "logging_file": None,   "plotting_freq": 10}
+        self.set_logger(self.settings['report_settings'])
+
+    def set_logger(self, s):
+        logger = logging.getLogger(self.__class__.__name__)
+        # create console handler and set level to debug
+        if ('logging_file' not in s) or (s['logging_file'] == None):
+            fh = logging.StreamHandler()
+        else:
+            fh = logging.FileHandler(s['logging_file'])
+        if 'logging_level' in s:
+            fh.setLevel(s['logging_level'])
+        else:
+            fh.setLevel(logging.DEBUG)
+        # create formatter
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+
+        # add console stdout or log file to logger
+        logger.addHandler(fh)
+        self.logger = logger  # usage: self.logger.debug(msg)
 
     def _read_hdf5_mesh(self, filename):
         # path is identical to FenicsSolver.utility 
@@ -165,8 +188,6 @@ class SolverBase():
             self._read_hdf5_mesh(filename)
         else:
             raise SolverError('mesh or function space must specified to construct solver object')
-
-        plot(self.boundary_facets, "boundary facets colored by ID")
 
     def generate_function_space(self, periodic_boundary):
         if 'element_degree' in self.settings:
@@ -311,8 +332,11 @@ class SolverBase():
 
             up_prev.assign(up_current)  #
             up_current = self.solve_static(F, up_current, Dirichlet_bcs_up)  # solve for each time step, up_prev tis not needed
-            #plot(up_current, title = "Value at time: " + str(t))
+
             print("Current time = ", self.current_time, " TimerSolveAll = ", timer_solver_all.elapsed())
+            pf = self.settings['report_settings']['plotting_freq']
+            if pf>0 and self.current_step % pf == 0 and (not self.is_mixed_function_space):
+                plot(up_current, title = "Value at time: " + str(self.current_time))
             # stop for steady case, or update time
             if not self.transient_settings['transient']:
                 break

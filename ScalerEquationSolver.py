@@ -119,6 +119,7 @@ class ScalerEquationSolver(SolverBase):
             if isinstance(self.body_source, dict):
                 S = []
                 for k,v in self.get_body_source().items():
+                    # it is good to using DG for multi-scale meshing, subdomain marking double
                     S.append(v['value']*Tq*dx(v['subdomain_id']))
                 return sum(S)
             else:
