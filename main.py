@@ -24,6 +24,7 @@
 from __future__ import print_function, division
 import json
 import sys
+import os.path
 
 import ScalerEquationSolver
 import CoupledNavierStokesSolver
@@ -86,27 +87,32 @@ def test_elasticity():
     pass
 
 def test_CFD():
+    #df = open(os.path.dirname(__file__) + os.path.sep + 'data/TestCFD.json', 'r')
     df = open('./data/TestCFD.json', 'r')
-    #settings = json.load(df)
     settings = json.loads(df.read(), object_hook=_decode_dict)  # force python2 load ascii string
+    #settings['case_folder'] = os.path.dirname(__file__) + os.path.sep + "data"
     solver = CoupledNavierStokesSolver.CoupledNavierStokesSolver(settings)
     solver.print()
     solver.solve()
     solver.plot()
 
 def test_heat_transfer():
+    #print(os.path.dirname(__file__))  # __file__ is absolute path for python 3.4+
     df = open('./data/TestHeatTransfer.json', 'r')
     settings = json.loads(df.read(), object_hook=_decode_dict)  # force python2 load ascii string
+    #settings['case_folder'] = os.path.dirname(__file__) + os.path.sep + "data"
     solver = ScalerEquationSolver.ScalerEquationSolver(settings)
     solver.print()
     solver.solve()
     solver.plot()
 
 if __name__ == "__main__":
-    # will mpirun also affect argv? 
-    if len(sys.argv) <=2:
-        print("Usage: python main.py case_input\n, test case is running ...\n")
-        #test_CFD()
+    # will mpirun also affect argv? No, the first is always the one following `python`, `main.py`
+    if len(sys.argv) <2:
+        print(sys.argv)
+        print("Not enough input argument, Usage: `python main.py case_input` \n run testing instead")
+        #  must start this solver in FenicsSolver folder
+        test_CFD()  # not converging
         test_heat_transfer()
     else:
-        main(sys.argv[2])
+        main(sys.argv[1])

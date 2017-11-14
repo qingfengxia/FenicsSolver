@@ -91,6 +91,10 @@ class SolverBase():
             raise SolverError('mesh or function space must specified to construct solver object')
         self.dimension = self.mesh.geometry().dim()
 
+        if 'element_degree' in s:
+            self.degree = s['element_degree']
+        else:
+            self.degree = 1
         ## 
         if 'body_source' in s and s['body_source']:
             self.body_source = s['body_source']
@@ -190,10 +194,6 @@ class SolverBase():
             raise SolverError('mesh or function space must specified to construct solver object')
 
     def generate_function_space(self, periodic_boundary):
-        if 'element_degree' in self.settings:
-            self.degree = self.settings['element_degree']
-        else:
-            self.degree = 1
         try:
             if periodic_boundary:
                 self.function_space = FunctionSpace(self.mesh, "CG", self.degree, constrained_domain=periodic_boundary)
@@ -219,16 +219,20 @@ class SolverBase():
             W = function_space
         else:
             W = self.function_space
-        if isinstance(value, (tuple,)):  # FIXME: json dump tuple into list, 
-            if len(value) >= self.dimension and isinstance(value[0], (numbers.Number)):
+        if isinstance(value, (tuple, list)):  # json dump tuple into list
+            if len(value) == self.dimension and isinstance(value[0], (numbers.Number)):
+                if isinstance(value, list):
+                    value = tuple(value)
                 values_0 = Constant(value)
-            elif len(value) >= self.dimension and isinstance(value[0], (str)):
+            elif len(value) == self.dimension and isinstance(value[0], (str)):
+                if isinstance(value, list):
+                    value = Constant(tuple(value))
                 values_0 = interpolate(Expression(value, degree = _degree), W)
             else:
                 raise TypeError(' {} is supplied, but only tuple of number and string expr are supported'.format(type(value)))
-        elif  isinstance(value, (list, np.ndarray)) and len(value) > self.current_step:
+        elif isinstance(value, (list, np.ndarray)) and len(value) > self.current_step:
             values_0 = value[self.current_step]
-        elif  isinstance(value, (numbers.Number)):
+        elif isinstance(value, (numbers.Number)):
             values_0 = Constant(value)
         elif isinstance(value, (Constant, Function)):  # CellFunction isinstance of Function???
             values_0 = value  # leave it as it is, since they can be used in equation
