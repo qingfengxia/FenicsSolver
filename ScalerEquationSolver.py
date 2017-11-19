@@ -4,8 +4,11 @@ import numpy as np
 
 from dolfin import *
 
-supported_scaler_equations = {'temperature'}
-# small species factor, that mixed material properties are same as the primary species, such as dye in water
+supported_scaler_equations = {'temperature', 'electric_potential', 'species_concentration'}
+# For small species factor, diffusivity = primary species, such as dye in water, always with convective velocity
+# electric_potential -> difference between conductor and dieletric material
+# magnetic_potential is a vector
+# porous pressure, e.g. underground water pressure 
 
 #thermal diffusivity = (thermal conductivity) / (density * specific heat)
 # thermal capacity = density * specific heat
@@ -18,7 +21,9 @@ class ScalerEquationSolver(SolverBase):
     # convective velocity: m/s, 
     # Thermal Conductivity:  w/(K m)
     # Specific Heat Capacity, Cp:  J/(kg K)
-    # shear_heating,  common in lubrication scinario, high viscosity and shear speed, one kind of volume/body source
+    # thermal specific:
+    # shear_heating: common in lubrication scinario, high viscosity and high shear speed, one kind of volume/body source
+    # radiation: 
     """
     def __init__(self, s):
         SolverBase.__init__(self, s)
@@ -28,11 +33,15 @@ class ScalerEquationSolver(SolverBase):
         else:
             self.scaler_name = "temperature"
 
-        if 'radiation_settings' in self.settings:
-            self.radiation_settings = self.settings['radiation_settings']
-            self.has_radiation = True
-        else:
-            self.has_radiation = False
+        if self.scaler_name == "eletric_potential":
+            assert self.settings['transient_settings']['transient'] == False
+
+        if self.scaler_name == "temperature":
+            if 'radiation_settings' in self.settings:
+                self.radiation_settings = self.settings['radiation_settings']
+                self.has_radiation = True
+            else:
+                self.has_radiation = False
 
         if 'convective_velocity' in self.settings and self.settings['convective_velocity']:
             self.has_convection = True
@@ -42,26 +51,34 @@ class ScalerEquationSolver(SolverBase):
             self.convective_velocity = None
 
     def capacity(self):
+        # to calc diffusion coeff : conductivity/capacity
         if 'capacity' in self.material:
             return self.material['capacity']
         # if not found, calc it
         if self.scaler_name == "temperature":
             return self.material['density'] * self.material['specific_heat_capacity']
-        elif self.scaler_name == "spicies":
-            pass
         elif self.scaler_name == "electric_potential":
-            pass
+            return 1  # depends on source and boundary flux physical value, could be electric_permittivity
+        elif self.scaler_name == "spicies_concentration":
+            return 1
         else:
             raise SolverError('material capacity property is not found for {}'.format(self.scaler_name))
 
     def conductivity(self):
         if 'conductivity' in self.material:
             return self.material['conductivity']
+
         if self.scaler_name == "temperature":
             return self.material['thermal_conductivity']
-        raise SolverError('conductivity material property is not found for {}'.format(self.scaler_name))
+        elif self.scaler_name == "electric_potential":
+            return self.material['electric_permittivity']
+        elif self.scaler_name == "spicies_concentration":
+            return self.material['diffusivity']
+        else:
+            raise SolverError('conductivity material property is not found for {}'.format(self.scaler_name))
 
     def get_internal_field(self):
+        #print(self.scaler_name, self.initial_values)
         v0 = self.translate_value(self.initial_values[self.scaler_name])
         if isinstance(v0, (Constant, Expression)):
             v0 = interpolate(v0, self.function_space)
@@ -75,21 +92,10 @@ class ScalerEquationSolver(SolverBase):
         #print("vel.ufl_shape", vel.ufl_shape)
         return vel
 
-    def generate_form(self, time_iter_, T, Tq, T_current, T_prev):
-        #T = TrialFunction(self.function_space)  # todo: could be shared beween time step
-        #Tq = TestFunction(self.function_space)  # todo: could be shared beween time step
-        normal = FacetNormal(self.mesh)
-
-        dx= Measure("dx", subdomain_data=self.subdomains)  # 
-        ds= Measure("ds", subdomain_data=self.boundary_facets)
+    def update_boundary_conditions(self, time_iter_, T, Tq, ds):
+        k = self.conductivity() # constant, experssion or tensor
         bcs = []
         integrals_N = []  # heat flux
-        k = self.conductivity() # constant, experssion or tensor
-        capacity = self.capacity()  # density * specific capacity -> volumetrical capacity
-
-        # TODO: split into a new function update_boundary
-        # boundary type is defined in FreeCAD FemConstraintFluidBoundary and its TaskPanel
-        # zeroGradient is default thermal boundary, no effect on equation
         for name, bc in self.boundary_conditions.items():
             i = bc['boundary_id']
             if bc['type'] == 'Dirichlet' or bc['type'] == 'fixedValue':
@@ -100,20 +106,37 @@ class ScalerEquationSolver(SolverBase):
                 g = self.get_boundary_value(bc, time_iter_)
                 integrals_N.append(k*g*Tq*ds(i))  # only work for constant conductivty k
                 #integrals_N.append(inner(k * (normal*g), Tq)*ds(i))  # not working
-            elif bc['type'] == 'heatFlux': # heatFlux: W/m2, it is not a general flux name
+            elif bc['type'] == 'flux' or bc['type'] == 'heatFlux' or  bc['type'] == 'electric_current':
+                # flux is a general flux, heatFlux: W/m2, it is not a general flux name
                 g = self.get_boundary_value(bc, time_iter_)
                 integrals_N.append(g*Tq*ds(i))
-            elif bc['type'] == 'mixed':
-                T_bc, g = self.get_boundary_value(bc, time_iter_)
+            elif bc['type'] == 'mixed' or bc['type'] == 'Robin':
+                T_bc, g = bc['value'], bc['gradient']
                 integrals_N.append(k*g*Tq*ds(i))  # only work for constant conductivty k
                 dbc = DirichletBC(self.function_space, T_bc, self.boundary_facets, i)
                 bcs.append(dbc)
-            elif bc['type'] == 'Robin' or bc['type'] == 'HTC':  # FIXME: HTC is not a general name
+            elif bc['type'] == 'HTC':  # FIXME: HTC is not a general name or general type, only for thermal analysis
                 #Robin, how to get the boundary value,  T as the first, HTC as the second
                 Ta, htc = bc['ambient'], bc['value']  # must be specified in Constant or Expressed in setup dict
                 integrals_N.append( htc*(Ta-T)*Tq*ds(i))
             else:
                 raise SolverError('boundary type`{}` is not supported'.format(bc['type']))
+        return bcs, integrals_N
+
+    def generate_form(self, time_iter_, T, Tq, T_current, T_prev):
+        # T, Tq can be shared between time steps, form is unified diffussion coefficient
+        normal = FacetNormal(self.mesh)
+
+        dx= Measure("dx", subdomain_data=self.subdomains)  # 
+        ds= Measure("ds", subdomain_data=self.boundary_facets)
+
+        k = self.conductivity() # constant, experssion or tensor
+        capacity = self.capacity()  # density * specific capacity -> volumetrical capacity
+        diffusivity = k / capacity  # diffusivity
+
+        bcs, integrals_N = self.update_boundary_conditions(time_iter_, T, Tq, ds)
+        # boundary type is defined in FreeCAD FemConstraintFluidBoundary and its TaskPanel
+        # zeroGradient is default thermal boundary, no effect on equation?
 
         def get_source_item():
             if isinstance(self.body_source, dict):
@@ -128,42 +151,36 @@ class ScalerEquationSolver(SolverBase):
                 else:
                     return None
 
-        # poission equation
+        # poission equation, unified for all kind of variables
         def F_static(T, Tq):
-            F =  inner(k * grad(T), grad(Tq))*dx
-            F -= sum(integrals_N)
+            F =  inner( diffusivity * grad(T), grad(Tq))*dx
+            F -= sum(integrals_N) * Constant(1.0/capacity)
             return F
 
-        def F_convective():  # only transient is supported
-            h = CellSize(self.mesh)  # what is that?
-            c = k / capacity  # diffusivity
+        def F_convective():
+            h = CellSize(self.mesh)  # cell size
+            velocity = self.get_convective_velocity_function(self.convective_velocity)
             if self.transient_settings['transient']:
                 dt = self.get_time_step(time_iter_)
                 # Mid-point solution
                 T_mid = 0.5*(T_prev + T)
-                velocity = self.get_convective_velocity_function(self.convective_velocity)
                 # Residual
-                res = (T - T_prev) + dt*(dot(velocity, grad(T_mid)) - c*div(grad(T_mid)))  # does not support conductivity tensor
+                res = (T - T_prev)/dt + (dot(velocity, grad(T_mid)) -  diffusivity * div(grad(T_mid)))  # does not support conductivity tensor
                 # Galerkin variational problem
-                F = Tq*(T - T_prev)*dx + dt*(Tq*dot(velocity, grad(T_mid))*dx + c*dot(grad(Tq), grad(T_mid))*dx)
-                if self.body_source:
-                    res -= get_source_item() * Constant(dt/capacity)
-                    #F -= self.body_source*Tq*dx * (dt / capacity)  # why F does not substract body?
-
-                F -= sum(integrals_N) * Constant(dt/capacity)
+                F = Tq*(T - T_prev)/dt*dx + (Tq*dot(velocity, grad(T_mid))*dx +  diffusivity * dot(grad(Tq), grad(T_mid))*dx)
             else:
                 T_mid = T
-                velocity = self.get_convective_velocity_function(self.convective_velocity)
                 # Residual
-                res = dot(velocity, grad(T_mid)) * capacity - k*div(grad(T_mid))
+                res = dot(velocity, grad(T_mid)) -  diffusivity * div(grad(T_mid))
                 #print(res)
                 # Galerkin variational problem
-                F = capacity * Tq*dot(velocity, grad(T_mid))*dx + \
-                    k*dot(grad(Tq), grad(T_mid))*dx
-                if self.body_source:
-                    res -= get_source_item()
-                    #F -= self.body_source*Tq*dx * capacity  # why F does not substract body?
-                F -= sum(integrals_N) 
+                F = Tq*dot(velocity, grad(T_mid))*dx + \
+                     diffusivity * dot(grad(Tq), grad(T_mid))*dx
+
+            F -= sum(integrals_N) * Constant(1.0/capacity)  # included in F_static()
+            if self.body_source:
+                res -= get_source_item() * Constant(1.0/capacity)
+                #F -= self.body_source*Tq*dx * capacity  # why F does not substract body?
             # Add SUPG stabilisation terms
             vnorm = sqrt(dot(velocity, velocity))
             F += (h/(2.0*vnorm))*dot(velocity, grad(Tq))*res*dx
@@ -176,13 +193,13 @@ class ScalerEquationSolver(SolverBase):
                 dt = self.get_time_step(time_iter_)
                 theta = Constant(0.5) # Crank-Nicolson time scheme
                 # Define time discretized equation, it depends on scaler type:  Energy, Species,
-                F = capacity * (1.0/dt)*inner(T-T_prev, Tq)*dx \
+                F = (1.0/dt)*inner(T-T_prev, Tq)*dx \
                        + theta*F_static(T, Tq) + (1.0-theta)*F_static(T_prev, Tq)  # FIXME:  check using T_0 or T_prev ? 
             else:
                 F = F_static(T, Tq)
             #print(F, get_source_item())
             if self.body_source:
-                F -= get_source_item()
+                F -= get_source_item() * Constant(1.0/capacity)
 
         if self.scaler_name == "temperature" and self.has_radiation:
             Stefan_constant = 5.670367e-8  # W/m-2/K-4
@@ -194,8 +211,8 @@ class ScalerEquationSolver(SolverBase):
             m_ = emissivity * Stefan_constant
             radiation_flux = m_*(pow(T, 4) - T_ambient_radiaton**4)  # it is nonlinear item
             print(m_, radiation_flux, F)
-            F -= radiation_flux*Tq*ds  # for all surface, without considering view angle
-            F = action(F, T_current)  #API 1.0 still working ; newer API , replacing TrialFunction with Function for nonlinear 
+            F -= radiation_flux*Tq*ds * Constant(1.0/capacity)  # for all surface, without considering view angle
+            F = action(F, T_current)  # API 1.0 still working ; newer API , replacing TrialFunction with Function for nonlinear 
             self.J = derivative(F, T_current, T)  # Gateaux derivative
         return F, bcs
 
@@ -223,14 +240,9 @@ class ScalerEquationSolver(SolverBase):
             return self.solve_linear_problem(F, T_current, bcs)
 
     ############## public API ##########################
-    def solve(self):
-        self.result = self.solve_transient()
-        return self.result
 
     def export(self):
         #save and return save file name, also timestamp
         result_filename = self.settings['case_folder'] + os.path.sep + "temperature" + "_time0" +  ".vtk"
         return result_filename
 
-    def plot(self):
-        plot(self.result)

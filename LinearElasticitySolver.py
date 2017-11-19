@@ -41,13 +41,16 @@ parameters["linear_algebra_backend"] = "PETSc"
 
 from SolverBase import SolverBase, SolverError
 class LinearElasticitySolver(SolverBase):
-    """ transient and  thermal stress is not implemented
-    complex boundary, pressure, force, displacement
+    """ transient and thermal stress is implemented but not tested
+    contact boundary is not implemented,
+    placity (nonlinear elastic) will be implemented in another solver
     """
     def __init__(self, case_settings):
         SolverBase.__init__(self, case_settings)
 
+        self.settings['vector_name'] = 'displacement'
         # there must be a value for body force as source item, to make L not empyt in a == L
+        #todo: moved to SolverBase
         if self.body_source:
             self.body_source = self.translate_value(self.body_source)
         else:
@@ -64,30 +67,17 @@ class LinearElasticitySolver(SolverBase):
         self.solving_modal = False
 
     def set_function_space(self, mesh_or_function_space, periodic_boundary):
-        # coupled NS fucntion using mixed function space
-        #print("mesh_or_function_space", type(mesh_or_function_space))
         try:
             self.mesh = mesh_or_function_space
             if periodic_boundary:
-                self.function_space = VectorFunctionSpace(self.mesh, "CG", 1, constrained_domain=periodic_boundary)
+                self.function_space = VectorFunctionSpace(self.mesh, "CG", self.degree, constrained_domain=periodic_boundary)
                 # the group and degree of the FE element.
             else:
-                self.function_space = VectorFunctionSpace(self.mesh, "CG", 1)
+                self.function_space = VectorFunctionSpace(self.mesh, "CG", self.degree)
         except:
             self.function_space = mesh_or_function_space
             self.mesh = self.function_space.mesh()
         self.is_mixed_function_space = False  # how to detect it is mixed, vector, scaler , tensor?
-
-    def get_internal_field(self):
-        if not self.initial_values:
-            if self.dimension == 3:
-                self.initial_values = Constant((0, 0, 0))
-            else:
-                self.initial_values = Constant((0, 0))
-        v0 = self.initial_values
-        if isinstance(v0, (Constant, Expression)):
-            d0 = interpolate(v0, self.function_space)
-        return d0
 
     # Stress computation
     def sigma(self, u):
@@ -177,10 +167,21 @@ class LinearElasticitySolver(SolverBase):
         if self.body_source:
             integrals_F.append( inner(self.body_source, v)*dx )
 
-        ## thermal stress
+        ## thermal stress not tested, todo: thermal_stress_settings = {}
         if self.temperature_distribution:
             T = self.translate_value(self.temperature_distribution)  # interpolate
-            thermal_stress = inner(elasticity * grad( T - Constant(self.reference_values['temperature'])) , v)*dx
+            tec = self.material['thermal_expansion_coefficient']
+            # only apply if the body is NOT freely expensible in all directions, with displacement constraint
+            # if there is one or two directions can have free expansion, poisson_ratio should be considerred
+            thermal_strain = tec * ( T - Constant(self.reference_values['temperature']))
+            if self.dimension == 3:
+                thermal_stress = inner(elasticity * thermal_strain , v)*dx
+            elif self.dimension == 2:  # assuming free expansion the third direction
+                thermal_strain = thermal_strain * (1 - self.material['poisson_ratio'])
+                thermal_stress = inner(elasticity * thermal_strain , v)*dx
+            else:
+                raise SolverError('only 3D and 2D simulation is supported')
+            # there is another case: local hotspot but not melt
             integrals_F.append( thermal_stress )
 
         # Assemble system, applying boundary conditions and extra items
@@ -205,7 +206,7 @@ class LinearElasticitySolver(SolverBase):
         return u
 
     def solve_modal(self, F, bcs):
-        # Assemble stiffness form, it is not fully tested yet
+        # todo: Assemble stiffness form, it is not fully tested yet
         A = PETScMatrix()
         b = PETScVector()
         '''

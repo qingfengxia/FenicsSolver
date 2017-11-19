@@ -107,12 +107,14 @@ def test_heat_transfer():
     solver.plot()
 
 if __name__ == "__main__":
-    # will mpirun also affect argv? No, the first is always the one following `python`, `main.py`
-    if len(sys.argv) <2:
-        print(sys.argv)
+    # will mpirun also affect argv? No, the first is always the one following `python`, i.e. `main.py`
+    print(sys.argv)
+    if len(sys.argv) < 2:
+
         print("Not enough input argument, Usage: `python main.py case_input` \n run testing instead")
         #  must start this solver in FenicsSolver folder
-        test_CFD()  # not converging
+
         test_heat_transfer()
+        #test_CFD()  # not converging
     else:
         main(sys.argv[1])

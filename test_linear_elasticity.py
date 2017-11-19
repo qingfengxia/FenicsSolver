@@ -103,7 +103,7 @@ def test():
     import copy
     s = copy.copy(SolverBase.default_case_settings)  # deep copy? 
     s['material'] = {'name': 'steel', 'elastic_modulus': 2e11, 'poisson_ratio': 0.27, 'density': 7800, 
-                                'thermal_expansion_coeff': 2e-6} #default to steel
+                                'thermal_expansion_coefficient': 2e-6} #default to steel
 
     s['function_space'] = V
     s['boundary_conditions'] = bcs

@@ -31,9 +31,6 @@ from ScalerEquationSolver import ScalerEquationSolver
 #mesh = UnitCubeMesh(20, 20, 20)
 mesh = UnitSquareMesh(40, 40)
 Q = FunctionSpace(mesh, "CG", 1)
-#print(dir(Q))
-#print(dir(Q._ufl_element))
-#print(Q._ufl_element.degree())
 
 cx_min, cy_min, cx_max, cy_max = 0,0,1,1
 # no need for on_boundary, it should capture the boundary
@@ -42,81 +39,47 @@ bottom = AutoSubDomain(lambda x: near(x[1],cy_min))
 left = AutoSubDomain(lambda x:  near(x[0], cx_min) )
 right = AutoSubDomain(lambda x: near(x[0],cx_max))
 
-T_hot = 360
-T_cold = 300
-T_ambient = 300
-conductivity = 0.6
+V_high = 360
+V_low = 300
+V_ground = 300
+resistivity = 2300 # ohm.m
+conductivity = 1.0/resistivity
+
+magnetic_permeability_0 = 4 * pi * 1e-7
+electric_permittivity_0 = 8.854187817e-12
+K_anisotropic = Expression((('exp(x[0])','sin(x[1])'), ('sin(x[0])','tan(x[1])')), degree=0)
+material = {'name': "silicon", 'conductivity': 149, 'capacity': 1000, \
+                    'density': 2500, 'sound_speed': 8433, 'Poisson_ratio': 0.2, 'elastic_modulus': 1.5e11, \
+                    'magnetic_permeability': magnetic_permeability_0*1, \
+                    'electric_permittivity': electric_permittivity_0*11.7, 'electric_conductivity': 1.0/resistivity}  # Tref set in reference_values
+
+
 length = cy_max - cy_min
-heat_flux = (T_hot-T_cold)/length*conductivity  # divided by length scale which is unity 1 ->  heat flux W/m^2
+electric_current = (V_high-V_low)/length/resistivity   # divided by length scale which is unity 1 ->  heat flux W/m^2
 
 bcs = { 
-        "hot": {'boundary': top, 'boundary_id': 1, 'type': 'Dirichlet', 'value': Constant(T_hot)}, 
+        "hot": {'boundary': top, 'boundary_id': 1, 'type': 'Dirichlet', 'value': Constant(V_high)}, 
         "left":  {'boundary': left, 'boundary_id': 3, 'type': 'heatFlux', 'value': Constant(0)}, # unit: K/m
         "right":  {'boundary': right, 'boundary_id': 4, 'type': 'heatFlux', 'value': Constant(0)}, 
         #back and front is zero gradient, need not set, it is default
 }
 
 settings = {'solver_name': 'ScalerEquationSolver',
-                'mesh': None, 'function_space': Q, 'periodic_boundary': None, 'fe_degree': 1,
+                'mesh': None, 'function_space': Q, 'periodic_boundary': None, 'element_degree': 1,
                 'boundary_conditions': bcs, 'body_source': None, 
-                'initial_values': {'temperature': T_ambient},
-                'material':{'density': 1000, 'specific_heat_capacity': 4200, 'conductivity':  0.1}, 
+                'initial_values': {'electric_potential': V_ground},
+                'material': material, 
                 'solver_settings': {
                     'transient_settings': {'transient': False, 'starting_time': 0, 'time_step': 0.1, 'ending_time': 1},
-                    'reference_values': {'temperature': T_ambient},
+                    'reference_values': {'temperature': 300, 'electric_potential': V_ground},
                     'solver_parameters': {"relative_tolerance": 1e-9,  # mapping to solver.parameters of Fenics
                                                     "maximum_iterations": 500,
                                                     "monitor_convergence": True,  # print to console
                                                     },
                     },
                 # solver specific settings
-                'scaler_name': 'temperature',
+                'scaler_name': 'electric_potential',
                 }
-
-K_anisotropic = Expression((('exp(x[0])','sin(x[1])'), ('sin(x[0])','tan(x[1])')), degree=0)  #works!
-"""
-# Create mesh functions for c00, c01, c11
-c00 = MeshFunction("double", mesh, 2)  # degree/dim == 2?
-c11 = MeshFunction("double", mesh, 2)
-c22 = MeshFunction("double", mesh, 2)
-for cell in cells(mesh):
-    c00[cell] = conductivity
-    c11[cell] = conductivity*0.1
-    c22[cell] = conductivity*0.1
-# Code for C++ evaluation of conductivity
-conductivity_code = '''
-
-class Conductivity : public Expression
-{
-public:
-
-  // Create expression with 3 components
-  Conductivity() : Expression(3) {}
-
-  // Function for evaluating expression on each cell
-  void eval(Array<double>& values, const Array<double>& x, const ufc::cell& cell) const
-  {
-    const uint D = cell.topological_dimension;
-    const uint cell_index = cell.index;
-    values[0] = (*c00)[cell_index];
-    values[1] = (*c11)[cell_index];
-    values[2] = (*c22)[cell_index];
-  }
-
-  // The data stored in mesh functions
-  std::shared_ptr<MeshFunction<double> > c00;
-  std::shared_ptr<MeshFunction<double> > c11;
-  std::shared_ptr<MeshFunction<double> > c22;
-
-};
-'''
-
-c = Expression(cppcode=conductivity_code, degree=0)
-c.c00 = c00
-c.c11 = c11
-c.c22 = c22
-K = as_matrix(((c[0], c[1]), (c[1], c[2])))
-"""
 
 def test(using_anisotropic_conductivity = True):
     using_convective_velocity = not using_anisotropic_conductivity
@@ -126,20 +89,20 @@ def test(using_anisotropic_conductivity = True):
         K = K_anisotropic
     else:
         K = conductivity
-        htc = heat_flux / (T_hot - T_cold)
-        print("analytical heat flux [w/m^2] = ", heat_flux)
+        htc = electric_current / (V_high - V_low)
+        print("analytical current density [A/m^2] = ", electric_current)
 
     #if using_convective_velocity:
-    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant(T_cold)}
-    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'heatFlux', 'value': Constant(heat_flux)}
-    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'HTC', 'value': Constant(htc), 'ambient': Constant(T_ambient)}
+    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant(V_low)}
+    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'heatFlux', 'value': Constant(electric_current)}
+    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Robin', 'value': Constant(htc), 'ambient': Constant(V_ground)}
 
     if using_convective_velocity:
         settings['convective_velocity'] =  Constant((0.5, -0.5))
     else:
         settings['convective_velocity'] = None
     solver = ScalerEquationSolver(settings)
-    solver.material['conductivity'] = K
+    solver.material['electric_conductivity'] = K
     #debugging: show boundary selection
     plot(solver.boundary_facets, "boundary facets colored by ID")
     plot(solver.subdomains, "subdomain cells colored by ID")
@@ -157,9 +120,9 @@ def post_process(T):
     ds= Measure("ds", subdomain_data=boundary_facets)
 
     flux = assemble(conductivity * dot(grad(T), normal)*ds(id))
-    print("tuft heat flux rate integral on the surface(w/m^2)", flux)
+    print("integral on the surface(A)", flux)
 
-    plot(T, title='Temperature')
+    plot(T, title='electric Potential (V)')
     #plot(mesh)
     interactive()
 
@@ -169,21 +132,19 @@ def test_radiation(using_anisotropic_conductivity = True):
         K = K_anisotropic
     else:
         K = conductivity
-        htc = heat_flux / (T_hot - T_cold)
-        print("analytical heat flux [w/m^2] = ", heat_flux)
+        htc = electric_current / (V_high - V_low)
+        print("analytical current density [A/m^2] = ", electric_current)
 
     #if using_convective_velocity:
-    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant(T_cold+30)}
-    settings['radiation_settings'] = {'ambient_temperature': T_ambient, 'emissivity': 0.9}
+    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant(V_low+30)}
     settings['convective_velocity'] = None
     solver = ScalerEquationSolver(settings)
     solver.material['conductivity'] = K
-    solver.material['emissivity'] = 0.9
+    #discard by radiation
 
     T = solver.solve()
     post_process(T)
 
 if __name__ == '__main__':
     test(True)
-    test(False)
-    #test_radiation(False)  # divergent, error in form
+    #test_radiation(False)  # divergent

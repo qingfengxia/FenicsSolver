@@ -72,8 +72,9 @@ def setup(using_elbow = True, using_3D = False, compressible=False):
 
     from collections import OrderedDict
     bcs_u = OrderedDict()
+    #todo : values from list to dict {'': }
     bcs_u["static"] = {'boundary': static_boundary, 'boundary_id': 1, 
-            'values':[{'variable': "velocity",'type': 'Dirichlet', 'value': zero_vel},
+            'values':[{'variable': "velocity",'type': 'Dirichlet', 'value': zero_vel, 'unit': 'm/s'},
                              {'variable': "temperature",'type': 'Dirichlet', 'value': T_wall}   ]}
     if using_3D:
         bcs_u["front_back"] = {'boundary': front_back_boundary, 'boundary_id': 5, 
@@ -147,11 +148,10 @@ def test_compressible(compressible = True, is_interactive = False):
         interactive()
 
 def test_incompressible(compressible = False, is_interactive=False):
-    s = setup(using_elbow = True, using_3D = False, compressible = False)
+    s = setup(using_elbow = True, using_3D = True, compressible = False)
     solving_energy_equation = False
 
     # for enclosured place, no need to set pressure?
-
     fluid = {'name': 'oil', 'kinematic_viscosity': 1e3, 'density': 800}
     s['material'] = fluid
 
@@ -180,4 +180,4 @@ def test_incompressible(compressible = False, is_interactive=False):
 
 if __name__ == '__main__':
     test_incompressible(False, True)  # manually call test function,  if discovered by google test, it will not plot in interactive mode
-    test_compressible(True, True)
+    #test_compressible(True, True)

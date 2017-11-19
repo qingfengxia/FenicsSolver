@@ -33,9 +33,13 @@ from dolfin import *
 class SolverError(Exception):
     pass
 
+default_report_settings  = {"logging_level":logging.DEBUG,  "logging_file": None,
+                                        "plotting_freq": 10, 'plotting_interactive': True, 
+                                        'saved_filename': 'result.pvd'}
 default_case_settings = {'solver_name': None,
                 'case_name': 'test', 'case_folder': "/tmp/",  'case_file': None,
-                'mesh':  None, 'function_space': None, 'periodic_boundary': None, 
+                'mesh':  None, 'fe_degree': 1, 'fe_family': "CG",
+                'function_space': None, 'periodic_boundary': None, 
                 'boundary_conditions': None, 
                 'body_source': None,  # dict for different subdomains {"sub_name": {'subdomain_id': 1, 'value': 2}}
                 'initial_values': {},
@@ -48,7 +52,7 @@ default_case_settings = {'solver_name': None,
                                                         "monitor_convergence": False,  # print to console
                                                     },
                     },
-                "output_settings": {}
+                "report_settings": default_report_settings
                 }
 
 class SolverBase():
@@ -79,6 +83,10 @@ class SolverBase():
                 self.generate_boundary_facets()
             else:
                 raise SolverError('Error: mesh must be file path or Mesh object: {}')
+            if 'fe_degree' in s:
+                self.degree = s['fe_degree']
+            else:
+                self.degree = 1
             if 'periodic_boundary' not in s:  # check: settings file can not store None element?
                 s['periodic_boundary'] = None
             self.generate_function_space(s['periodic_boundary'])
@@ -90,11 +98,10 @@ class SolverBase():
         else:
             raise SolverError('mesh or function space must specified to construct solver object')
         self.dimension = self.mesh.geometry().dim()
+        self.is_mixed_function_space = False  # todo: how to detect it is mixed?
+        if not hasattr(self, 'subdomains'):
+            self.subdomains = CellFunction("size_t", self.mesh)
 
-        if 'element_degree' in s:
-            self.degree = s['element_degree']
-        else:
-            self.degree = 1
         ## 
         if 'body_source' in s and s['body_source']:
             self.body_source = s['body_source']
@@ -114,7 +121,8 @@ class SolverBase():
         self.transient = self.transient_settings['transient']
 
         if 'report_settings' not in self.settings:
-            self.settings['report_settings'] = {"logging_level":logging.DEBUG,  "logging_file": None,   "plotting_freq": 10}
+            self.settings['report_settings'] = default_report_settings
+        self.report_settings = self.settings['report_settings'] 
         self.set_logger(self.settings['report_settings'])
 
     def set_logger(self, s):
@@ -194,15 +202,13 @@ class SolverBase():
             raise SolverError('mesh or function space must specified to construct solver object')
 
     def generate_function_space(self, periodic_boundary):
-        try:
-            if periodic_boundary:
-                self.function_space = FunctionSpace(self.mesh, "CG", self.degree, constrained_domain=periodic_boundary)
-                # the group and degree of the FE element.
-            else:
-                self.function_space = FunctionSpace(self.mesh, "CG", self.degree)
-        except:
-            raise SolverError('Fail to generate function space from mesh')
-        self.is_mixed_function_space = False  # how to detect it is mixed?
+        if periodic_boundary:
+            self.function_space = FunctionSpace(self.mesh, "CG", self.degree, constrained_domain=periodic_boundary)
+            # the group and degree of the FE element.
+        else:
+            self.function_space = FunctionSpace(self.mesh, "CG", self.degree)
+        #except:
+        #   raise SolverError('Fail to generate function space from mesh')
 
     def generate_boundary_facets(self):
         boundary_facets = FacetFunction('size_t', self.mesh)
@@ -211,6 +217,22 @@ class SolverBase():
         for name, bc in self.boundary_conditions.items():
             bc['boundary'].mark(boundary_facets, bc['boundary_id'])
         self.boundary_facets = boundary_facets
+
+    def get_internal_field(self):  #todo: rename -> get_initial_field()
+        if isinstance(self.function_space, VectorFunctionSpace):
+            if not self.initial_values:
+                if self.dimension == 3:
+                    self.initial_values = Constant((0, 0, 0))
+                else:
+                    self.initial_values = Constant((0, 0))
+            v0 = self.initial_values
+        elif isinstance(self.function_space, FunctionSpace):
+            v0 = self.translate_value(self.initial_values[self.scaler_name])
+        else:
+            raise SolverError('only vector and scaler function can run this method')
+        if isinstance(v0, (Constant, Expression)):
+            v0 = interpolate(v0, self.function_space)
+        return v0
 
     def translate_value(self, value, function_space = None):
         # for both internal and boundary values
@@ -229,7 +251,7 @@ class SolverBase():
                     value = Constant(tuple(value))
                 values_0 = interpolate(Expression(value, degree = _degree), W)
             else:
-                raise TypeError(' {} is supplied, but only tuple of number and string expr are supported'.format(type(value)))
+                print(' {} is supplied, but only tuple of number and string expr of dim = len(v) are supported'.format(type(value)))
         elif isinstance(value, (list, np.ndarray)) and len(value) > self.current_step:
             values_0 = value[self.current_step]
         elif isinstance(value, (numbers.Number)):
@@ -237,7 +259,8 @@ class SolverBase():
         elif isinstance(value, (Constant, Function)):  # CellFunction isinstance of Function???
             values_0 = value  # leave it as it is, since they can be used in equation
         elif isinstance(value, (Expression, )): 
-            values_0 = interpolate(Expression(value, degree = _degree), W)
+            # FIXME, can not interpolate an exception
+            values_0 = value  # interpolate(value, W)
         elif callable(value):
             values_0 = value(self.current_time)
         elif isinstance(value, (str, )):
@@ -259,7 +282,7 @@ class SolverBase():
 
     def get_boundary_value(self, bc, time_iter_=None):
         if self.transient_settings['transient']:
-            if isinstance(bc['value'], list):  # if it is a list but not tuple
+            if isinstance(bc['value'], (list, np.ndarray)):  # if it is a list but not tuple
                 bvalue = (bc['value'])[time_iter_] #already, interpolated function, should be
             elif callable(bc['value']): 
                 bvalue = bc['value'](self.get_current_time(time_iter_))
@@ -338,7 +361,7 @@ class SolverBase():
             up_current = self.solve_static(F, up_current, Dirichlet_bcs_up)  # solve for each time step, up_prev tis not needed
 
             print("Current time = ", self.current_time, " TimerSolveAll = ", timer_solver_all.elapsed())
-            pf = self.settings['report_settings']['plotting_freq']
+            pf = self.report_settings['plotting_freq']
             if pf>0 and self.current_step % pf == 0 and (not self.is_mixed_function_space):
                 plot(up_current, title = "Value at time: " + str(self.current_time))
             # stop for steady case, or update time
@@ -349,7 +372,20 @@ class SolverBase():
         ## end of time loop
         timer_solver_all.stop()
 
+        if 'saved_filename' in self.report_settings:
+            result_file = File(self.report_settings['saved_filename'])
+            result_file << up_current
+
         return up_current
+
+    def solve(self):
+        self.result = self.solve_transient()
+        return self.result
+
+    def plot(self):
+        plot(self.result)
+        if self.report_settings['plotting_interactive']:
+            interactive()
 
     ####################################
     def solve_linear_problem(self, F, u, Dirichlet_bcs):
