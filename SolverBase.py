@@ -35,7 +35,7 @@ class SolverError(Exception):
 
 default_report_settings  = {"logging_level":logging.DEBUG,  "logging_file": None,
                                         "plotting_freq": 10, 'plotting_interactive': True, 
-                                        'saved_filename': 'result.pvd'}
+                                        'saved_filename': None}
 default_case_settings = {'solver_name': None,
                 'case_name': 'test', 'case_folder': "/tmp/",  'case_file': None,
                 'mesh':  None, 'fe_degree': 1, 'fe_family': "CG",
@@ -372,7 +372,7 @@ class SolverBase():
         ## end of time loop
         timer_solver_all.stop()
 
-        if 'saved_filename' in self.report_settings:
+        if 'saved_filename' in self.report_settings and self.report_settings['saved_filename']:
             result_file = File(self.report_settings['saved_filename'])
             result_file << up_current
 

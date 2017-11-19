@@ -43,24 +43,28 @@ V_high = 360
 V_low = 300
 V_ground = 300
 resistivity = 2300 # ohm.m
-conductivity = 1.0/resistivity
+#conductivity = 1.0/resistivity
+
+#polarity is not considered by this solver
 
 magnetic_permeability_0 = 4 * pi * 1e-7
 electric_permittivity_0 = 8.854187817e-12
 K_anisotropic = Expression((('exp(x[0])','sin(x[1])'), ('sin(x[0])','tan(x[1])')), degree=0)
-material = {'name': "silicon", 'conductivity': 149, 'capacity': 1000, \
+
+# dielectric or conducting
+material = {'name': "silicon", 'thermal_conductivity': 149, 'specific_heat_capacity': 1000, \
                     'density': 2500, 'sound_speed': 8433, 'Poisson_ratio': 0.2, 'elastic_modulus': 1.5e11, \
                     'magnetic_permeability': magnetic_permeability_0*1, \
                     'electric_permittivity': electric_permittivity_0*11.7, 'electric_conductivity': 1.0/resistivity}  # Tref set in reference_values
 
 
 length = cy_max - cy_min
-electric_current = (V_high-V_low)/length/resistivity   # divided by length scale which is unity 1 ->  heat flux W/m^2
+electric_displacement = (V_high-V_low)/length * material['electric_permittivity']   # divided by length scale which is unity 1 ->  heat flux W/m^2
 
 bcs = { 
         "hot": {'boundary': top, 'boundary_id': 1, 'type': 'Dirichlet', 'value': Constant(V_high)}, 
-        "left":  {'boundary': left, 'boundary_id': 3, 'type': 'heatFlux', 'value': Constant(0)}, # unit: K/m
-        "right":  {'boundary': right, 'boundary_id': 4, 'type': 'heatFlux', 'value': Constant(0)}, 
+        "left":  {'boundary': left, 'boundary_id': 3, 'type': 'flux', 'value': Constant(0)},
+        "right":  {'boundary': right, 'boundary_id': 4, 'type': 'flux', 'value': Constant(0)}, 
         #back and front is zero gradient, need not set, it is default
 }
 
@@ -81,28 +85,24 @@ settings = {'solver_name': 'ScalerEquationSolver',
                 'scaler_name': 'electric_potential',
                 }
 
-def test(using_anisotropic_conductivity = True):
-    using_convective_velocity = not using_anisotropic_conductivity
+def test(using_anisotropic_material = True):
+    using_convective_velocity = False
 
-    if using_anisotropic_conductivity:
+    if using_anisotropic_material:
         #tensor-weighted-poisson/python/demo_tensor-weighted-poisson.py
-        K = K_anisotropic
+        settings['material']['electric_permittivity'] = K_anisotropic
     else:
-        K = conductivity
-        htc = electric_current / (V_high - V_low)
-        print("analytical current density [A/m^2] = ", electric_current)
+        print("analytical current density [A/m^2] = ", electric_displacement)
 
     #if using_convective_velocity:
     bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant(V_low)}
-    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'heatFlux', 'value': Constant(electric_current)}
-    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Robin', 'value': Constant(htc), 'ambient': Constant(V_ground)}
+    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'flux', 'value': Constant(electric_displacement)}
 
     if using_convective_velocity:
         settings['convective_velocity'] =  Constant((0.5, -0.5))
     else:
         settings['convective_velocity'] = None
     solver = ScalerEquationSolver(settings)
-    solver.material['electric_conductivity'] = K
     #debugging: show boundary selection
     plot(solver.boundary_facets, "boundary facets colored by ID")
     plot(solver.subdomains, "subdomain cells colored by ID")
@@ -119,32 +119,13 @@ def post_process(T):
     bottom.mark(boundary_facets, id)
     ds= Measure("ds", subdomain_data=boundary_facets)
 
-    flux = assemble(conductivity * dot(grad(T), normal)*ds(id))
-    print("integral on the surface(A)", flux)
+    flux = assemble(settings['material']['electric_permittivity'] * dot(grad(T), normal)*ds(id))
+    print("integral on the top surface(A)", flux)
 
     plot(T, title='electric Potential (V)')
     #plot(mesh)
     interactive()
 
-def test_radiation(using_anisotropic_conductivity = True):
-    if using_anisotropic_conductivity:
-        #tensor-weighted-poisson/python/demo_tensor-weighted-poisson.py
-        K = K_anisotropic
-    else:
-        K = conductivity
-        htc = electric_current / (V_high - V_low)
-        print("analytical current density [A/m^2] = ", electric_current)
-
-    #if using_convective_velocity:
-    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant(V_low+30)}
-    settings['convective_velocity'] = None
-    solver = ScalerEquationSolver(settings)
-    solver.material['conductivity'] = K
-    #discard by radiation
-
-    T = solver.solve()
-    post_process(T)
-
 if __name__ == '__main__':
-    test(True)
+    test(False)
     #test_radiation(False)  # divergent
