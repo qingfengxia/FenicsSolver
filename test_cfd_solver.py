@@ -1,6 +1,7 @@
+# -*- coding: utf-8 -*-
 # ***************************************************************************
 # *                                                                         *
-# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia eng ox ac uk>                 *       *
+# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia iesensor.com>         *
 # *                                                                         *
 # *   This program is free software; you can redistribute it and/or modify  *
 # *   it under the terms of the GNU Lesser General Public License (LGPL)    *
@@ -19,6 +20,7 @@
 # *   USA                                                                   *
 # *                                                                         *
 # ***************************************************************************
+
 
 from __future__ import print_function, division
 import math
@@ -72,7 +74,7 @@ def setup(using_elbow = True, using_3D = False, compressible=False):
 
     from collections import OrderedDict
     bcs_u = OrderedDict()
-    #todo : values from list to dict {'': }
+
     bcs_u["static"] = {'boundary': static_boundary, 'boundary_id': 1, 
             'values':[{'variable': "velocity",'type': 'Dirichlet', 'value': zero_vel, 'unit': 'm/s'},
                              {'variable': "temperature",'type': 'Dirichlet', 'value': T_wall}   ]}
@@ -148,7 +150,7 @@ def test_compressible(compressible = True, is_interactive = False):
         interactive()
 
 def test_incompressible(compressible = False, is_interactive=False):
-    s = setup(using_elbow = True, using_3D = True, compressible = False)
+    s = setup(using_elbow = True, using_3D = False, compressible = False)
     solving_energy_equation = False
 
     # for enclosured place, no need to set pressure?
@@ -163,15 +165,13 @@ def test_incompressible(compressible = False, is_interactive=False):
     plot(p)
     #plot(solver.viscous_heat(u,p))
 
-    if solving_energy_equation:
+    if solving_energy_equation:  # not fully tested
         from . import  ScalerEquationSolver
-        bcs_temperature = {}
-        bcs_temperature["inlet"] = {'boundary': inlet, 'boundary_id': 2, 'type': 'Dirichlet', 'value': 350}
-        solver_T = ScalerEquationSolver.ScalerEquationSolver(mesh, bcs_temperature)  # FIXME: update to new API
+        solver_T = ScalerEquationSolver.ScalerEquationSolver(s)
         #Q = solver.function_space.sub(1)  # seem it is hard to share vel between. u is vectorFunction
         Q = solver_T.function_space
-        cvel = Function(Q)
-        cvel.interpolate(u)
+        cvel = VectorFunction(Q)
+        cvel.interpolate(u)  # degree ? 
         selver_T.convective_velocity = cvel
         T = solver_T.solve()
 
@@ -179,5 +179,7 @@ def test_incompressible(compressible = False, is_interactive=False):
         interactive()
 
 if __name__ == '__main__':
-    test_incompressible(False, True)  # manually call test function,  if discovered by google test, it will not plot in interactive mode
+    test_incompressible(True, False)
+    # manually call test function,  if discovered by google test, it will not plot in interactive mode
+    #test_incompressible(False, True)  # Elbow 3D is slow but possible
     #test_compressible(True, True)

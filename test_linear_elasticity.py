@@ -67,7 +67,7 @@ def test():
     bcs = OrderedDict()
     #
     #bcs["fixed"] = {'boundary': Left(), 'boundary_id': 1, 'type': 'Dirichlet', 'value': Constant((0,0,0))}
-    bcs["fixed"] = {'boundary': Left(), 'boundary_id': 1, 'type': 'Dirichlet', 'value': (Constant(0), Constant(0), Constant(0))}
+    bcs["fixed"] = {'boundary': Left(), 'boundary_id': 1, 'type': 'Dirichlet', 'value': Constant((0, 0, 0))}
     
     bcs["displ"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant((0.01, 0, 0))}
     #bcs["displ"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'Dirichlet', 'value': (Constant(0.01), None, None)}
@@ -108,6 +108,7 @@ def test():
     s['function_space'] = V
     s['boundary_conditions'] = bcs
     s['temperature_distribution']=None
+    #s['vector_name'] = 'displacement'
     s['solver_settings']['reference_values'] = {'temperature':293 },  # solver specific setting
 
     solver = LinearElasticitySolver.LinearElasticitySolver(s)  # body force test passed

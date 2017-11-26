@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # ***************************************************************************
 # *                                                                         *
-# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia eng ox ac uk>                 *       *
+# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia iesensor.com>         *
 # *                                                                         *
 # *   This program is free software; you can redistribute it and/or modify  *
 # *   it under the terms of the GNU Lesser General Public License (LGPL)    *
@@ -26,11 +26,7 @@ import json
 import sys
 import os.path
 
-import ScalerEquationSolver
-import CoupledNavierStokesSolver
-
 "To cope with different python versions for FreeCAD and Fenics, running as an external program"
-
 
 _encoding = 'ascii'
 def _decode_list(data):
@@ -60,23 +56,31 @@ def _decode_dict(data):
     return rv
 #obj = json.loads(s, object_hook=_decode_dict)
 
-
-def main(case_input):
+def load_settings(case_input):
     # Order of key in dict is lost
     if isinstance(case_input, (dict)):
         settings = case_input
-    elif isinstance(case_input, (unicode, str)):
+    elif os.path.exists(case_input):
         s = open(case_input, 'r').read()
         settings = json.loads(s, object_hook=_decode_dict)
     else:
         raise TypeError('{} is not supported by Fenics as case input, only path string or dict'.format(type(case_input)))
+    return settings
 
+def main(case_input):
+    settings = load_settings(case_input)
     solver_name = settings['solver_name']
     if solver_name == "CoupledNavierStokesSolver":
+        import CoupledNavierStokesSolver
         solver = CoupledNavierStokesSolver.CoupledNavierStokesSolver(settings)
         solver.solve()
     elif solver_name == "ScalerEquationSolver":
+        import ScalerEquationSolver
         solver = ScalerEquationSolver.ScalerEquationSolver(settings)
+        solver.solve()
+    elif solver_name == "LinearElasticitySolver":
+        import LinearElasticitySolver
+        solver = LinearElasticitySolver.LinearElasticitySolver(settings)
         solver.solve()
     else:
         raise NameError('Solver name : {} is not supported by Fenics'.format(solver_name))
@@ -87,10 +91,10 @@ def test_elasticity():
     pass
 
 def test_CFD():
-    #df = open(os.path.dirname(__file__) + os.path.sep + 'data/TestCFD.json', 'r')
-    df = open('./data/TestCFD.json', 'r')
-    settings = json.loads(df.read(), object_hook=_decode_dict)  # force python2 load ascii string
+    df = './data/TestCFD.json'
+    settings = load_settings(df)  # force python2 load ascii string
     #settings['case_folder'] = os.path.dirname(__file__) + os.path.sep + "data"
+    import CoupledNavierStokesSolver
     solver = CoupledNavierStokesSolver.CoupledNavierStokesSolver(settings)
     solver.print()
     solver.solve()
@@ -98,8 +102,8 @@ def test_CFD():
 
 def test_heat_transfer():
     #print(os.path.dirname(__file__))  # __file__ is absolute path for python 3.4+
-    df = open('./data/TestHeatTransfer.json', 'r')
-    settings = json.loads(df.read(), object_hook=_decode_dict)  # force python2 load ascii string
+    df = './data/TestHeatTransfer.json'
+    settings = load_settings(df)
     #settings['case_folder'] = os.path.dirname(__file__) + os.path.sep + "data"
     solver = ScalerEquationSolver.ScalerEquationSolver(settings)
     solver.print()

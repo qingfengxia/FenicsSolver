@@ -1,6 +1,7 @@
+# -*- coding: utf-8 -*-
 # ***************************************************************************
 # *                                                                         *
-# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia eng ox ac uk>                 *       *
+# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia iesensor.com>         *
 # *                                                                         *
 # *   This program is free software; you can redistribute it and/or modify  *
 # *   it under the terms of the GNU Lesser General Public License (LGPL)    *
@@ -20,6 +21,7 @@
 # *                                                                         *
 # ***************************************************************************
 
+
 from __future__ import print_function, division
 #import math may cause error
 import numbers
@@ -34,10 +36,16 @@ class SolverError(Exception):
     pass
 
 default_report_settings  = {"logging_level":logging.DEBUG,  "logging_file": None,
-                                        "plotting_freq": 10, 'plotting_interactive': True, 
-                                        'saved_filename': None}
+                            "plotting_freq": 10, 'plotting_interactive': True, 
+                            'saved_filename': None}
+
+# directly mapping to solver.parameters of Fenics
+default_solver_parameters = {"relative_tolerance": 1e-5,
+                             "maximum_iterations": 500,
+                             "monitor_convergence": True,  # print to console
+                             }
 default_case_settings = {'solver_name': None,
-                'case_name': 'test', 'case_folder': "/tmp/",  'case_file': None,
+                'case_name': 'test', 'case_folder': "./",  'case_file': None,
                 'mesh':  None, 'fe_degree': 1, 'fe_family': "CG",
                 'function_space': None, 'periodic_boundary': None, 
                 'boundary_conditions': None, 
@@ -47,17 +55,15 @@ default_case_settings = {'solver_name': None,
                 'solver_settings': {
                     'transient_settings': {'transient': False, 'starting_time': 0, 'time_step': 0.01, 'ending_time': 0.03},
                     'reference_values': {},
-                    'solver_parameters': {"relative_tolerance": 1e-5,  # mapping to solver.parameters of Fenics
-                                                        "maximum_iterations": 500,
-                                                        "monitor_convergence": False,  # print to console
-                                                    },
+                    'solver_parameters': default_solver_parameters,
                     },
                 "report_settings": default_report_settings
                 }
 
 class SolverBase():
     """ shared base class for all fenics solver with utilty functions
-    solve(), plot(), get_variables(), generate_
+    solve(), plot(), get_variables(), 
+    generate_form() and update_boundary_conditions() must be implemented by derived class
     """
     def __init__(self, case_input):
         if isinstance(case_input, (dict)):
@@ -153,7 +159,7 @@ class SolverBase():
 
         self.subdomains = CellFunction("size_t", mesh)
         if (hdf.has_dataset("/subdomains")):
-            hdf.read(subdomains, "/subdomains")
+            hdf.read(self.subdomains, "/subdomains")
         else:
             print('Subdomain file is not provided')
 
@@ -218,20 +224,57 @@ class SolverBase():
             bc['boundary'].mark(boundary_facets, bc['boundary_id'])
         self.boundary_facets = boundary_facets
 
-    def get_internal_field(self):  #todo: rename -> get_initial_field()
-        if isinstance(self.function_space, VectorFunctionSpace):
-            if not self.initial_values:
-                if self.dimension == 3:
-                    self.initial_values = Constant((0, 0, 0))
-                else:
-                    self.initial_values = Constant((0, 0))
-            v0 = self.initial_values
-        elif isinstance(self.function_space, FunctionSpace):
-            v0 = self.translate_value(self.initial_values[self.scaler_name])
+    def get_initial_field(self):
+        # must return Function, currently only support 
+        if not self.initial_values:
+            #if isinstance(self.function_space, (VectorFunctionSpace,)):
+            if 'vector_name' in self.settings:
+                v0 = (0, 0, 0)[:self.dimension]
+            elif 'scaler_name' in self.settings:
+                v0 = 0
+            else:
+                raise SolverError('only vector and scaler equation can run this method')
         else:
-            raise SolverError('only vector and scaler function can run this method')
-        if isinstance(v0, (Constant, Expression)):
-            v0 = interpolate(v0, self.function_space)
+            if 'vector_name' in self.settings:
+                v0 = self.initial_values[self.settings['vector_name']]
+            elif 'scaler_name' in self.settings:
+                v0 = self.initial_values[self.settings['scaler_name']]
+            else:
+                raise SolverError('only vector and scaler function can run this method')
+        if 'vector_name' in self.settings and isinstance(v0[0], (str, numbers.Number)):
+            _initial_values_expr = Expression( tuple([str(v) for v in v0]), degree = self.degree)
+            u0 = interpolate(_initial_values_expr, self.function_space)
+        elif 'scaler_name' in self.settings and isinstance(v0, (str, numbers.Number)):
+            _initial_values_expr = Expression(str(v0), degree = self.degree)
+            u0 = interpolate(_initial_values_expr, self.function_space)
+        else:
+            raise SolverError('only number and str are supported as initial values')
+        return u0
+
+    def get_material_value(self, value):
+        if isinstance(value, (list, tuple, np.ndarray)) and len(value) == self.dimension:
+            if len(value[0]) == self.dimension:  # anisotropic material matrix, tensor
+                if isinstance(value[0][0], (numbers.Number,)):
+                    return as_matrix(value)
+        elif isinstance(value, dict):  # inhomogeneous, multi-region values
+            return self._translate_dict_value(value)
+        elif isinstance(value, (numbers.Number,)):
+            return value
+        # TODO: nonlinear, function/expression of temperature, or any variable
+        else:  # linear homogenous material, str, Expression, numbers.Number, Constant, Callable
+            return self.translate_value(value)
+            
+    def get_body_source(self):
+        pass
+
+    def _translate_dict_value(self, value):
+        """ body source, initial value or material for multiple subdomains 
+        dict input format: {'region1': {'subdomain_id': 1, 'value': 1}, ...}
+        for performance reason, numpy array is operated directly, or cpp expression
+        """
+        v0 = Function(self.function_space)
+        for k, v in value.item():
+            pass
         return v0
 
     def translate_value(self, value, function_space = None):
@@ -252,18 +295,21 @@ class SolverBase():
                 values_0 = interpolate(Expression(value, degree = _degree), W)
             else:
                 print(' {} is supplied, but only tuple of number and string expr of dim = len(v) are supported'.format(type(value)))
-        elif isinstance(value, (list, np.ndarray)) and len(value) > self.current_step:
-            values_0 = value[self.current_step]
+        elif self.transient_settings['transient']:  # transient only, different value for each time step
+            if isinstance(value, (list, np.ndarray)) and len(value) > self.dimension:
+                values_0 = value[self.current_step]
+            elif callable(value):
+                values_0 = value(self.current_time)
+            else:
+                raise TypeError('only numpy array or python function of time is supported for transient value')
         elif isinstance(value, (numbers.Number)):
             values_0 = Constant(value)
         elif isinstance(value, (Constant, Function)):  # CellFunction isinstance of Function???
             values_0 = value  # leave it as it is, since they can be used in equation
         elif isinstance(value, (Expression, )): 
-            # FIXME, can not interpolate an exception
+            # FIXME can not interpolate an expression, not necessary?
             values_0 = value  # interpolate(value, W)
-        elif callable(value):
-            values_0 = value(self.current_time)
-        elif isinstance(value, (str, )):
+        elif isinstance(value, (str, )):  # file or string expression
             if os.path.exists(value):
                 # also possible continue from existent solution, or interpolate from diff mesh density
                 values_0 = Function(W)
@@ -273,24 +319,38 @@ class SolverBase():
                 values_0 = fenicstools.interpolate_nonmatching_mesh(values_0 , W)
             else:  # C++ expressing string
                 values_0 = interpolate(Expression(value, degree = _degree), W)
-        elif type(value) == type(None):
+        elif value == None:
             raise TypeError('None type is supplied')
         else:
             raise TypeError(' {} is supplied, not tuple, number, Constant,file name, Expression'.format(type(value)))
             #values_0 = None
         return values_0
 
-    def get_boundary_value(self, bc, time_iter_=None):
-        if self.transient_settings['transient']:
-            if isinstance(bc['value'], (list, np.ndarray)):  # if it is a list but not tuple
-                bvalue = (bc['value'])[time_iter_] #already, interpolated function, should be
-            elif callable(bc['value']): 
-                bvalue = bc['value'](self.get_current_time(time_iter_))
-            else:
-                bvalue = bc['value']
+    def get_variable_name(self):
+        if 'scaler_name' in self.settings:
+            return self.settings['scaler_name']
+        elif 'vector_name' in self.settings:
+            return self.settings['vector_name']
+        else:
+            return 'unknown'
+        
+    def get_boundary_variable(self, bc, variable=None):
+        if 'values' in bc:  # new style, boundary contains a 'values' dict
+            if not variable:
+                variable = self.get_variable_name()
+            bvariable = bc['values'][variable]
+        else:
+            bvariable = bc
+        return bvariable
+
+    def get_boundary_value(self, bc, variable=None):
+        if 'values' in bc:  # new style, boundary contains a 'values' dict
+            if not variable:
+                variable = self.get_variable_name()
+            bvalue = bc['values'][variable]['value']
         else:
             bvalue = bc['value']
-        return self.translate_value(bvalue, time_iter_)
+        return translate_value(bvalue)
 
     def get_body_source(self):
         if isinstance(self.body_source, (dict)):  # a dict of subdomain, perhaps easier by giving an Expression
@@ -330,7 +390,7 @@ class SolverBase():
         trial_function = TrialFunction(self.function_space)
         test_function = TestFunction(self.function_space)
         # Define functions for transient loop
-        up_current = self.get_internal_field()  # init to default or user provided constant
+        up_current = self.get_initial_field()  # init to default or user provided constant
         up_prev = Function(self.function_space)
         up_prev.assign(up_current)
         ts = self.transient_settings

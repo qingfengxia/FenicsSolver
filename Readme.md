@@ -18,6 +18,8 @@ A set of multi-physics FEM solvers based on Fenics with GUI support(via integrat
 + Solvers under development: compressible flow, Maxwell electromagnetics.
 + Coupling to external solvers: turbulent flow will be implemented by coupled to external CFD solver, OpenFOAM.
 
+It functions like COMSOL or Moose, but it is free and it is made of Python.
+
 ## Installation
 
 copy this folder to any place on the python search path (PYTHON_PATH), assuming fenics has been installed. 

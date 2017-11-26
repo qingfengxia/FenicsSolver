@@ -1,6 +1,7 @@
+# -*- coding: utf-8 -*-
 # ***************************************************************************
 # *                                                                         *
-# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia eng ox ac uk>                 *       *
+# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia iesensor.com>         *
 # *                                                                         *
 # *   This program is free software; you can redistribute it and/or modify  *
 # *   it under the terms of the GNU Lesser General Public License (LGPL)    *
@@ -19,6 +20,7 @@
 # *   USA                                                                   *
 # *                                                                         *
 # ***************************************************************************
+
 
 from __future__ import print_function, division
 #import math may cause error
@@ -43,33 +45,25 @@ class CoupledNavierStokesSolver(SolverBase):
     """
     def __init__(self, case_input):
 
+        if 'solving_temperature' in case_input:
+            self.solving_temperature = case_input['solving_temperature']
+        else:
+            self.solving_temperature = False
         SolverBase.__init__(self, case_input)
 
-        if 'body_source' in case_input and case_input['body_source']:  # FIXME: source term type, centrifugal force is possible
-            self.body_force = self.translate_value(case_input['body_source'])
+        # init and reference must be provided by case setup
+
+        if self.solving_temperature:
+            self.settings['mixed_variable'] = ('velocity', 'pressure', 'temperature')
         else:
-            if self.dimension == 2: 
-                self.body_force = Constant((0, -9.8))
-            else:
-                self.body_force = Constant((0, 0, -9.8))
-
-        ## default ref and init value
-        self.reference_values = {'pressure': 1e5, 'velocity': 1, 'temperature': 293, 'length': 1 }
-        if not self.initial_values:  # TODO: Also add temp init
-            self.initial_values = {'pressure': self.reference_values['pressure'],  'temperature': self.reference_values['temperature'] }
-            if self.dimension == 3:
-                self.initial_values['velocity'] = (0,1,0), 
-            else:
-                self.initial_values['velocity'] = (0,1)
-
+            self.settings['mixed_variable'] = ('velocity', 'pressure')
         ## Define solver parameters, underreleax, tolerance, max_iter
-        self.is_iterative_solver = True  ## Deprecated:  -> solver_parameters
+        # solver_parameters
 
     def generate_function_space(self, periodic_boundary):
         self.vel_degree = 2  # order 3 is working for 2D elbow testing
-        self.pressure_degree = self.vel_degree -1
-        self.solving_temperature = False
-        self.is_mixed_function_space = True  # how to detect it is mixed?
+        self.pressure_degree = self.vel_degree - 1
+        self.is_mixed_function_space = True  # FIXME: how to detect it is mixed, if function_space is provided
 
         V = VectorElement("CG", self.mesh.ufl_cell(), self.vel_degree)  # degree 2, must be higher than pressure
         Q = FiniteElement("CG", self.mesh.ufl_cell(), self.pressure_degree)
@@ -83,7 +77,18 @@ class CoupledNavierStokesSolver(SolverBase):
         else:
             self.function_space = FunctionSpace(self.mesh, mixed_element)
 
-    def get_internal_field(self):
+    def get_body_source(self):
+        # FIXME: source term type, centrifugal force is possible
+        if 'body_source' in self.settings and self.settings['body_source']:
+            body_force = self.translate_value(self.settings['body_source'])
+        else:  # default gravity
+            if self.dimension == 2: 
+                body_force = Constant((0, -9.8))
+            else:
+                body_force = Constant((0, 0, -9.8))
+        return body_force
+
+    def get_initial_field(self):
         # assume:  all constant, velocity is a tupe of constant
         # function assigner is another way, assign(m.sub(0), v0)
         print(self.initial_values)
@@ -127,11 +132,12 @@ class CoupledNavierStokesSolver(SolverBase):
             solver_type = 'mumps', form_compilder_parameters = {'cpp_optimize':  True, "representation": 'quadrature', "quadrature_degree": 2})
 
     def viscosity(self):
+        # TODO material nonlinear is not yet implemented
         _nu = self.material['kinematic_viscosity']
         if isinstance(_nu, (Constant, numbers.Number)):
             nu = Constant(_nu)
         #else:  #if nu is nu is string or function
-        #def viscosity_function(u, p):
+        #def viscosity_function(u, T, p):
         #   return Constant(1)*pow(p/Constant(self.reference_values['pressure']), 2)
         #   _nu = viscosity(u, p)
         return _nu  # nonlinear, nonNewtonian
@@ -170,8 +176,8 @@ class CoupledNavierStokesSolver(SolverBase):
         F = nu * 2.0*inner(epsilon(u), epsilon(v))*dx \
             - p*div(v)*dx \
             + div(u)*q*dx
-        if self.body_force: 
-            F -= inner(self.body_force, v)*dx
+        if self.settings['body_source']: 
+            F -= inner(self.get_body_source(), v)*dx
         # Add convective term
         F += inner(dot(grad(u), u_0), v)*dx  # u_0 is the current value solved
         return F
@@ -199,20 +205,32 @@ class CoupledNavierStokesSolver(SolverBase):
         #Dirichlet_bcs_up = [DirichletBC(W.sub(0), Constant(0,0,0), boundary_facets, 0)] #default vel, should be set before call this
         for key, boundary in self.boundary_conditions.items():
             #print(boundary)
-            for bc in boundary['values']:  # a list of boundary values
+            if isinstance(boundary['values'], list):
+                bc_values = boundary['values']
+            else:
+                bc_values = boundary['values'].values()
+            for bc in bc_values:  # a list of boundary values or dict
                 if bc['variable'] == 'velocity':
-                    bvalue = self.get_boundary_value(bc, time_iter_)
+                    print(bc['value'])
+                    bvalue = self.translate_value(bc['value'])
+                    '''
+                    if hasattr(bc['value'], '__len__') and len(bc['value']) == self.dimension:
+                        bvalue = self.translate_value(bc['value'])
+                    else:  # scaler
+                        #bvalue = self.translate_value(bc['value'])*n
+                        raise TypeError('FacetNormal can not been used in Dirichlet boundary')
+                    '''
                     if bc['type'] == 'Dirichlet':
                         Dirichlet_bcs_up.append(DirichletBC(W.sub(0), bvalue, self.boundary_facets, boundary['boundary_id']) )
                         print("found velocity boundary for id = {}".format(boundary['boundary_id']))
                     elif bc['type'] == 'Neumann':  # zero gradient, outflow
                         NotImplementedError('Neumann boundary for velocity is not implemented')
                     elif bc['type'] == 'symmetry' or bc['type'] == 'farfield': 
-                        pass   # velocity gradient is zero, do nothing here,              no normal stress, see [COMSOL Multiphysics Modeling Guide]
+                        pass   # velocity gradient is zero, do nothing here, no normal stress, see [COMSOL Multiphysics Modeling Guide]
                     else:
                         print('velocity boundary type`{}` is not supported'.format(bc['type']))
                 elif bc['variable'] == 'pressure':
-                    bvalue = self.get_boundary_value(bc, time_iter_)
+                    bvalue = self.translate_value(bc['value'])  # self.get_boundary_value(bc, 'pressure')
                     if bc['type'] == 'Dirichlet':  # pressure  inlet or outlet
                         Dirichlet_bcs_up.append(DirichletBC(W.sub(1), bvalue, self.boundary_facets, boundary['boundary_id']) )
                         F_bc.append(inner(bvalue*n, v)*ds(boundary['boundary_id'])) # very import to make sure convergence
@@ -228,7 +246,7 @@ class CoupledNavierStokesSolver(SolverBase):
                     else:
                         print('pressure boundary type`{}` is not supported thus ignored'.format(bc['type']))
                 elif bc['variable'] == 'temperature' and self.solving_temperature:  # used by compressible NS solver
-                    bvalue = self.get_boundary_value(bc, time_iter_)
+                    bvalue = self.translate_value(bc['value'])
                     if bc['type'] == 'Dirichlet':  # pressure  inlet or outlet
                         Dirichlet_bcs_up.append(DirichletBC(W.sub(2), bvalue, self.boundary_facets, boundary['boundary_id']) )
                         print("found temperature boundary for id = {}".format(boundary['boundary_id']))
@@ -310,4 +328,5 @@ class CoupledNavierStokesSolver(SolverBase):
         u,p= split(self.result)
         plot(u)
         plot(p)
-        interactive()
+        if self.report_settings['plotting_interactive']:
+            interactive()

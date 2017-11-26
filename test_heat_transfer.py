@@ -50,17 +50,24 @@ length = cy_max - cy_min
 heat_flux = (T_hot-T_cold)/length*conductivity  # divided by length scale which is unity 1 ->  heat flux W/m^2
 
 bcs = { 
-        "hot": {'boundary': top, 'boundary_id': 1, 'type': 'Dirichlet', 'value': Constant(T_hot)}, 
-        "left":  {'boundary': left, 'boundary_id': 3, 'type': 'heatFlux', 'value': Constant(0)}, # unit: K/m
-        "right":  {'boundary': right, 'boundary_id': 4, 'type': 'heatFlux', 'value': Constant(0)}, 
+        "hot": {'boundary': top, 'boundary_id': 1, 'values': {
+                    'temperature': {'variable': 'temperature', 'type': 'Dirichlet', 'value': Constant(T_hot)}
+                 } },
+        "left":  {'boundary': left, 'boundary_id': 3, 'values': {
+                 'temperature': {'variable': 'temperature', 'type': 'heatFlux', 'value': Constant(0)}
+                 } },  # unit: K/m
+        "right":  {'boundary': right, 'boundary_id': 4, 'values': {
+                 'temperature': {'variable': 'temperature', 'type': 'heatFlux', 'value': Constant(0)}
+                 } }
         #back and front is zero gradient, need not set, it is default
 }
 
 settings = {'solver_name': 'ScalerEquationSolver',
                 'mesh': None, 'function_space': Q, 'periodic_boundary': None, 'fe_degree': 1,
-                'boundary_conditions': bcs, 'body_source': None, 
+                'boundary_conditions': bcs,
+                'body_source': None,
                 'initial_values': {'temperature': T_ambient},
-                'material':{'density': 1000, 'specific_heat_capacity': 4200, 'conductivity':  0.1}, 
+                'material':{'density': 1000, 'specific_heat_capacity': 4200, 'thermal_conductivity':  0.1}, 
                 'solver_settings': {
                     'transient_settings': {'transient': False, 'starting_time': 0, 'time_step': 0.1, 'ending_time': 1},
                     'reference_values': {'temperature': T_ambient},
@@ -130,7 +137,9 @@ def test(using_anisotropic_conductivity = True):
         print("analytical heat flux [w/m^2] = ", heat_flux)
 
     #if using_convective_velocity:
-    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant(T_cold)}
+    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'values': {
+                    'temperature': {'variable': 'temperature', 'type': 'Dirichlet', 'value': Constant(T_cold)}
+                 } }
     #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'heatFlux', 'value': Constant(heat_flux)}
     #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'HTC', 'value': Constant(htc), 'ambient': Constant(T_ambient)}
 
@@ -141,8 +150,8 @@ def test(using_anisotropic_conductivity = True):
     solver = ScalerEquationSolver(settings)
     solver.material['conductivity'] = K
     #debugging: show boundary selection
-    plot(solver.boundary_facets, "boundary facets colored by ID")
-    plot(solver.subdomains, "subdomain cells colored by ID")
+    plot(solver.boundary_facets, title="boundary facets colored by ID")
+    plot(solver.subdomains, title="subdomain cells colored by ID")
 
     T = solver.solve()
     post_process(T)
@@ -173,7 +182,9 @@ def test_radiation(using_anisotropic_conductivity = True):
         print("analytical heat flux [w/m^2] = ", heat_flux)
 
     #if using_convective_velocity:
-    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant(T_cold+30)}
+    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'values': {
+                    'temperature': {'variable': 'temperature', 'type': 'Dirichlet', 'value': Constant(T_cold)}
+                 } }
     settings['radiation_settings'] = {'ambient_temperature': T_ambient, 'emissivity': 0.9}
     settings['convective_velocity'] = None
     solver = ScalerEquationSolver(settings)

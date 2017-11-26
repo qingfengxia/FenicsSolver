@@ -1,3 +1,27 @@
+# -*- coding: utf-8 -*-
+# ***************************************************************************
+# *                                                                         *
+# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia iesensor.com>         *
+# *                                                                         *
+# *   This program is free software; you can redistribute it and/or modify  *
+# *   it under the terms of the GNU Lesser General Public License (LGPL)    *
+# *   as published by the Free Software Foundation; either version 2 of     *
+# *   the License, or (at your option) any later version.                   *
+# *   for detail see the LICENCE text file.                                 *
+# *                                                                         *
+# *   This program is distributed in the hope that it will be useful,       *
+# *   but WITHOUT ANY WARRANTY; without even the implied warranty of        *
+# *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the         *
+# *   GNU Library General Public License for more details.                  *
+# *                                                                         *
+# *   You should have received a copy of the GNU Library General Public     *
+# *   License along with this program; if not, write to the Free Software   *
+# *   Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  *
+# *   USA                                                                   *
+# *                                                                         *
+# ***************************************************************************
+
+
 from __future__ import print_function, division
 import math
 import numpy as np
@@ -6,12 +30,12 @@ from dolfin import *
 
 supported_scaler_equations = {'temperature', 'electric_potential', 'species_concentration'}
 # For small species factor, diffusivity = primary species, such as dye in water, always with convective velocity
-# electric_potential -> difference between conductor and dieletric material
-# magnetic_potential is a vector
+# electric_potential, only for dieletric material electrostatics (permittivity/conductivity << 1)
+# magnetic_potential is a vector, magnetostatics (static current) is solved in MaxwellEMSolver (permittivity/conductivity >> 1)
 # porous pressure, e.g. underground water pressure 
 
-#thermal diffusivity = (thermal conductivity) / (density * specific heat)
-# thermal capacity = density * specific heat
+# thermal diffusivity = (thermal conductivity) / (density * specific heat)
+# thermal volumetric capacity = density * specific heat
 
 from SolverBase import SolverBase, SolverError
 class ScalerEquationSolver(SolverBase):
@@ -51,38 +75,45 @@ class ScalerEquationSolver(SolverBase):
             self.convective_velocity = None
 
     def capacity(self):
-        # to calc diffusion coeff : conductivity/capacity
+        # to calc diffusion coeff : conductivity/capacity, it must be number only
         if 'capacity' in self.material:
-            return self.material['capacity']
+            c = self.material['capacity']
         # if not found, calc it
         if self.scaler_name == "temperature":
-            return self.material['density'] * self.material['specific_heat_capacity']
+            c = self.material['density'] * self.material['specific_heat_capacity']
         elif self.scaler_name == "electric_potential":
-            return 1  # depends on source and boundary flux physical value, could be electric_permittivity
+            c = 1  # depends on source and boundary flux physical value
         elif self.scaler_name == "spicies_concentration":
-            return 1
+            c = 1
         else:
             raise SolverError('material capacity property is not found for {}'.format(self.scaler_name))
+        return self.get_material_value(c)  # to deal with nonlinear material
+
+    def diffusivity(self):
+        if 'diffusivity' in self.material:
+            c = self.material['diffusivity']
+        elif self.scaler_name == "temperature":
+            c = self.material['thermal_conductivity'] / self.capacity()
+        elif self.scaler_name == "electric_potential":
+            c = self.material['electric_permittivity']
+        elif self.scaler_name == "spicies_concentration":
+            c = self.material['diffusivity']
+        else:
+            raise SolverError('conductivity material property is not found for {}'.format(self.scaler_name))
+        return self.get_material_value(c)  # to deal with nonlinear material
 
     def conductivity(self):
         if 'conductivity' in self.material:
-            return self.material['conductivity']
-
-        if self.scaler_name == "temperature":
-            return self.material['thermal_conductivity']
+            c = self.material['conductivity']
+        elif self.scaler_name == "temperature":
+            c = self.material['thermal_conductivity']
         elif self.scaler_name == "electric_potential":
-            return self.material['electric_permittivity']
+            c = self.material['electric_permittivity']
         elif self.scaler_name == "spicies_concentration":
-            return self.material['diffusivity']
+            c = self.material['diffusivity']
         else:
-            raise SolverError('conductivity material property is not found for {}'.format(self.scaler_name))
-
-    def get_internal_field(self):
-        #print(self.scaler_name, self.initial_values)
-        v0 = self.translate_value(self.initial_values[self.scaler_name])
-        if isinstance(v0, (Constant, Expression)):
-            v0 = interpolate(v0, self.function_space)
-        return v0
+            c = self.diffusivity() * self.capacity()
+        return self.get_material_value(c)  # to deal with nonlinear material
 
     def get_convective_velocity_function(self, convective_velocity):
         self.vector_space = VectorFunctionSpace(self.mesh, 'CG', self.degree+1)
@@ -96,28 +127,32 @@ class ScalerEquationSolver(SolverBase):
         k = self.conductivity() # constant, experssion or tensor
         bcs = []
         integrals_N = []  # heat flux
-        for name, bc in self.boundary_conditions.items():
-            i = bc['boundary_id']
+        for name, bc_settings in self.boundary_conditions.items():
+            i = bc_settings['boundary_id']
+            bc = self.get_boundary_variable(bc_settings)
+
             if bc['type'] == 'Dirichlet' or bc['type'] == 'fixedValue':
-                T_bc = self.get_boundary_value(bc, time_iter_)
+                T_bc = self.translate_value(bc['value'])
                 dbc = DirichletBC(self.function_space, T_bc, self.boundary_facets, i)
                 bcs.append(dbc)
             elif bc['type'] == 'Neumann' or bc['type'] =='fixedGradient':  # unit: K/m
-                g = self.get_boundary_value(bc, time_iter_)
+                g = self.translate_value(bc['value'])
                 integrals_N.append(k*g*Tq*ds(i))  # only work for constant conductivty k
                 #integrals_N.append(inner(k * (normal*g), Tq)*ds(i))  # not working
-            elif bc['type'] == 'flux' or bc['type'] == 'heatFlux' or  bc['type'] == 'electric_current':
+            elif bc['type'].lower().find('flux')>=0 or bc['type'] == 'electric_current':
                 # flux is a general flux, heatFlux: W/m2, it is not a general flux name
-                g = self.get_boundary_value(bc, time_iter_)
+                g = self.translate_value(bc['value'])
                 integrals_N.append(g*Tq*ds(i))
             elif bc['type'] == 'mixed' or bc['type'] == 'Robin':
-                T_bc, g = bc['value'], bc['gradient']
+                T_bc = self.translate_value(bc['value'])
+                g = self.translate_value(bc['gradient'])
                 integrals_N.append(k*g*Tq*ds(i))  # only work for constant conductivty k
                 dbc = DirichletBC(self.function_space, T_bc, self.boundary_facets, i)
                 bcs.append(dbc)
             elif bc['type'] == 'HTC':  # FIXME: HTC is not a general name or general type, only for thermal analysis
                 #Robin, how to get the boundary value,  T as the first, HTC as the second
-                Ta, htc = bc['ambient'], bc['value']  # must be specified in Constant or Expressed in setup dict
+                Ta = self.translate_value(bc['ambient'])
+                htc = self.translate_value(bc['value'])  # must be specified in Constant or Expressed in setup dict
                 integrals_N.append( htc*(Ta-T)*Tq*ds(i))
             else:
                 raise SolverError('boundary type`{}` is not supported'.format(bc['type']))
@@ -132,7 +167,7 @@ class ScalerEquationSolver(SolverBase):
 
         k = self.conductivity() # constant, experssion or tensor
         capacity = self.capacity()  # density * specific capacity -> volumetrical capacity
-        diffusivity = k / capacity  # diffusivity
+        diffusivity = self.diffusivity()  # diffusivity
 
         bcs, integrals_N = self.update_boundary_conditions(time_iter_, T, Tq, ds)
         # boundary type is defined in FreeCAD FemConstraintFluidBoundary and its TaskPanel

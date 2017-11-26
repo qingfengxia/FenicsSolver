@@ -1,6 +1,6 @@
 # ***************************************************************************
 # *                                                                         *
-# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia eng ox ac uk>                 *       *
+# *   Copyright (c) 2017 - Qingfeng Xia <qingfeng.xia iesensor.com>         *
 # *                                                                         *
 # *   This program is free software; you can redistribute it and/or modify  *
 # *   it under the terms of the GNU Lesser General Public License (LGPL)    *
@@ -79,21 +79,14 @@ class LinearElasticitySolver(SolverBase):
             self.mesh = self.function_space.mesh()
         self.is_mixed_function_space = False  # how to detect it is mixed, vector, scaler , tensor?
 
-    # Stress computation
+
     def sigma(self, u):
+        # Stress computation
         elasticity = self.material['elastic_modulus']
         nu = self.material['poisson_ratio']
         mu = elasticity/(2.0*(1.0 + nu))
         lmbda = elasticity*nu/((1.0 + nu)*(1.0 - 2.0*nu))
         return 2.0*mu*sym(grad(u)) + lmbda*tr(sym(grad(u)))*Identity(len(u))
-
-    # Strain energy 
-    def energy(self, u):
-        elasticity = self.material['elastic_modulus']
-        nu = self.material['poisson_ratio']
-        mu = elasticity/(2.0*(1.0 + nu))
-        lmbda = elasticity*nu/((1.0 + nu)*(1.0 - 2.0*nu))
-        return lmbda/2.0*(tr(eps(v)))^2 + mu*tr(eps(v)**2)
 
     def von_Mises(self, u):
         s = self.sigma(u) - (1./3)*tr(self.sigma(u))*Identity(self.dimension)  # deviatoric stress
@@ -102,26 +95,37 @@ class LinearElasticitySolver(SolverBase):
         V = FunctionSpace(self.mesh, 'P', 1)  # correct, but why using another function space
         return project(von_Mises, V)
 
+    def strain_energy(self, u):
+        # Strain energy or the plastic heat generation
+        elasticity = self.material['elastic_modulus']
+        nu = self.material['poisson_ratio']
+        mu = elasticity/(2.0*(1.0 + nu))
+        lmbda = elasticity*nu/((1.0 + nu)*(1.0 - 2.0*nu))
+        return lmbda/2.0*(tr(eps(v)))^2 + mu*tr(eps(v)**2)
+
     def update_boundary_conditions(self, time_iter_, u, v, ds):
         V = self.function_space
         bcs = []
         integrals_F = []
         mesh_normal = FacetNormal(self.mesh)  # n is predefined as normal?
-        for name, bc in self.boundary_conditions.items():
-            i = bc['boundary_id']
+        for name, bc_settings in self.boundary_conditions.items():
+            i = bc_settings['boundary_id']
+            bc = self.get_boundary_variable(bc_settings)
+            print(bc)
             if bc['type'] =='Dirichlet' or bc['type'] =='displacement':
-                if isinstance(bc['value'], (Expression, Constant)):
-                    dbc = DirichletBC(V, bc['value'], self.boundary_facets, i)
-                    bcs.append(dbc)
-                else: # transient setting from time_stamp
+                bv = self.translate_value(bc['value'])
+                if isinstance(bv, (tuple, list)) and len(bv) == self.dimension:
                     axis_i=0
-                    for disp in bc['value']:
-                        if disp:
-                            dbc = DirichletBC(V.sub(axis_i), Constant(disp), self.boundary_facets, i)
+                    for disp in bv:
+                        if not disp is None:  # None means free of constraint, but zero is kind of constraint
+                            dbc = DirichletBC(V.sub(axis_i), self.translate_value(disp), self.boundary_facets, i)
                             bcs.append(dbc)
                         axis_i += 1
+                else:
+                    dbc = DirichletBC(V, self.translate_value(bv), self.boundary_facets, i)
+                    bcs.append(dbc)
             elif bc['type'] == 'force':
-                bc_force = bc['value']
+                bc_force = self.translate_value(bc['value'])
                 # calc the surface area and calc stress, normal and tangential?
                 bc_area = assemble(Constant(1)*ds(bc['boundary_id'], domain=self.mesh))
                 print('boundary area (m2) for force boundary is', bc_area)
@@ -137,12 +141,13 @@ class LinearElasticitySolver(SolverBase):
                     direction_vector = bc['direction']
                 else:
                     direction_vector = mesh_normal  # normal to boundary surface, n is predefined
-                g = bc['value']
+                g = self.translate_value(bc['value'])
+                #FIXME: assuming all force are normal to mesh boundary
                 integrals_F.append(dot(g,v)*ds(i))
             elif bc['type'] == 'symmetry':
-                raise SolverError('thermal boundary type`{}` is not supported'.format(bc['type']))
+                raise SolverError('symmetry boundary type`{}` is not supported'.format(bc['type']))
             else:
-                raise SolverError('thermal boundary type`{}` is not supported'.format(bc['type']))
+                raise SolverError('boundary type`{}` is not supported'.format(bc['type']))
         ## nodal constraint is not yet supported, try make it a small surface load instead
         return bcs, integrals_F
 
