@@ -68,10 +68,8 @@ class ScalerEquationSolver(SolverBase):
                 self.has_radiation = False
 
         if 'convective_velocity' in self.settings and self.settings['convective_velocity']:
-            self.has_convection = True
             self.convective_velocity = self.settings['convective_velocity']
         else:
-            self.has_convection = False
             self.convective_velocity = None
 
     def capacity(self):
@@ -165,7 +163,7 @@ class ScalerEquationSolver(SolverBase):
         dx= Measure("dx", subdomain_data=self.subdomains)  # 
         ds= Measure("ds", subdomain_data=self.boundary_facets)
 
-        k = self.conductivity() # constant, experssion or tensor
+        conductivity = self.conductivity() # constant, experssion or tensor
         capacity = self.capacity()  # density * specific capacity -> volumetrical capacity
         diffusivity = self.diffusivity()  # diffusivity
 
@@ -182,14 +180,15 @@ class ScalerEquationSolver(SolverBase):
                 return sum(S)
             else:
                 if self.body_source:
-                    return  self.get_body_source()*Tq*dx
+                    return self.get_body_source()*Tq*dx
                 else:
                     return None
+        #print("body_source: ", self.get_body_source())
 
         # poission equation, unified for all kind of variables
         def F_static(T, Tq):
-            F =  inner( diffusivity * grad(T), grad(Tq))*dx
-            F -= sum(integrals_N) * Constant(1.0/capacity)
+            F =  inner( conductivity * grad(T), grad(Tq))*dx
+            F -= sum(integrals_N)
             return F
 
         def F_convective():
@@ -200,22 +199,22 @@ class ScalerEquationSolver(SolverBase):
                 # Mid-point solution
                 T_mid = 0.5*(T_prev + T)
                 # Residual
-                res = (T - T_prev)/dt + (dot(velocity, grad(T_mid)) -  diffusivity * div(grad(T_mid)))  # does not support conductivity tensor
+                res = ((T - T_prev)/dt + dot(velocity, grad(T_mid)))*capacity - conductivity * div(grad(T_mid))  # does not support conductivity tensor
                 # Galerkin variational problem
-                F = Tq*(T - T_prev)/dt*dx + (Tq*dot(velocity, grad(T_mid))*dx +  diffusivity * dot(grad(Tq), grad(T_mid))*dx)
+                F = ((T - T_prev)/dt+ dot(velocity, grad(T_mid)))*capacity*dx*Tq + conductivity * dot(grad(Tq), grad(T_mid))*dx
             else:
                 T_mid = T
                 # Residual
-                res = dot(velocity, grad(T_mid)) -  diffusivity * div(grad(T_mid))
+                res = dot(velocity, grad(T_mid))*capacity - conductivity * div(grad(T_mid))   # does not support tensor conductivity
                 #print(res)
                 # Galerkin variational problem
-                F = Tq*dot(velocity, grad(T_mid))*dx + \
-                     diffusivity * dot(grad(Tq), grad(T_mid))*dx
+                F = Tq*dot(velocity, grad(T_mid))*capacity*dx + conductivity * dot(grad(Tq), grad(T_mid))*dx
 
-            F -= sum(integrals_N) * Constant(1.0/capacity)  # included in F_static()
+            F -= sum(integrals_N)  # included in F_static()
             if self.body_source:
-                res -= get_source_item() * Constant(1.0/capacity)
-                #F -= self.body_source*Tq*dx * capacity  # why F does not substract body?
+                print(self.body_source)
+                res -= self.get_body_source()
+                F -= get_source_item()
             # Add SUPG stabilisation terms
             vnorm = sqrt(dot(velocity, velocity))
             F += (h/(2.0*vnorm))*dot(velocity, grad(Tq))*res*dx
@@ -228,13 +227,13 @@ class ScalerEquationSolver(SolverBase):
                 dt = self.get_time_step(time_iter_)
                 theta = Constant(0.5) # Crank-Nicolson time scheme
                 # Define time discretized equation, it depends on scaler type:  Energy, Species,
-                F = (1.0/dt)*inner(T-T_prev, Tq)*dx \
+                F = (1.0/dt)*inner(T-T_prev, Tq)*capacity*dx \
                        + theta*F_static(T, Tq) + (1.0-theta)*F_static(T_prev, Tq)  # FIXME:  check using T_0 or T_prev ? 
             else:
                 F = F_static(T, Tq)
             #print(F, get_source_item())
             if self.body_source:
-                F -= get_source_item() * Constant(1.0/capacity)
+                F -= get_source_item() 
 
         if self.scaler_name == "temperature" and self.has_radiation:
             Stefan_constant = 5.670367e-8  # W/m-2/K-4
@@ -246,7 +245,7 @@ class ScalerEquationSolver(SolverBase):
             m_ = emissivity * Stefan_constant
             radiation_flux = m_*(pow(T, 4) - T_ambient_radiaton**4)  # it is nonlinear item
             print(m_, radiation_flux, F)
-            F -= radiation_flux*Tq*ds * Constant(1.0/capacity)  # for all surface, without considering view angle
+            F -= radiation_flux*Tq*ds # for all surface, without considering view angle
             F = action(F, T_current)  # API 1.0 still working ; newer API , replacing TrialFunction with Function for nonlinear 
             self.J = derivative(F, T_current, T)  # Gateaux derivative
         return F, bcs

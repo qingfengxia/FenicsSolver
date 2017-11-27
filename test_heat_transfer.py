@@ -127,21 +127,31 @@ K = as_matrix(((c[0], c[1]), (c[1], c[2])))
 
 def test(using_anisotropic_conductivity = True):
     using_convective_velocity = not using_anisotropic_conductivity
-
+    using_HTC = False
     if using_anisotropic_conductivity:
         #tensor-weighted-poisson/python/demo_tensor-weighted-poisson.py
         K = K_anisotropic
     else:
         K = conductivity
-        htc = heat_flux / (T_hot - T_cold)
         print("analytical heat flux [w/m^2] = ", heat_flux)
 
-    #if using_convective_velocity:
-    bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'values': {
-                    'temperature': {'variable': 'temperature', 'type': 'Dirichlet', 'value': Constant(T_cold)}
-                 } }
-    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'heatFlux', 'value': Constant(heat_flux)}
-    #bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'type': 'HTC', 'value': Constant(htc), 'ambient': Constant(T_ambient)}
+    if not using_HTC:
+        if using_convective_velocity:
+            bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'values': {
+                            'temperature': {'variable': 'temperature', 'type': 'Dirichlet', 'value': Constant(T_cold)}
+                         } }
+        else:
+            bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'values': {
+                            'temperature': {'variable': 'temperature',  'type': 'heatFlux', 'value': Constant(heat_flux)}
+                         } }
+    else:
+        htc = 100
+        bcs["hot"] = {'boundary': top, 'boundary_id': 1, 'values': {
+                        'temperature': {'variable': 'temperature',  'type': 'heatFlux', 'value': Constant(heat_flux*10)}
+                     } }
+        bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'values': {
+                        'temperature': {'variable': 'temperature', 'type': 'HTC', 'value': Constant(htc), 'ambient': Constant(T_ambient)}
+                    } }
 
     if using_convective_velocity:
         settings['convective_velocity'] =  Constant((0.5, -0.5))
@@ -195,6 +205,6 @@ def test_radiation(using_anisotropic_conductivity = True):
     post_process(T)
 
 if __name__ == '__main__':
-    test(True)
+    #test(True)
     test(False)
     #test_radiation(False)  # divergent, error in form

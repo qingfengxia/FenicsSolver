@@ -81,6 +81,7 @@ class SolverBase():
     def load_settings(self, s):
         ## mesh and boundary
         self.boundary_conditions = s['boundary_conditions']
+
         if ('mesh' in s) and s['mesh']:
             if isinstance(s['mesh'], (str, unicode)):
                 self.read_mesh(s['mesh'])  # it also read boundary
@@ -262,10 +263,10 @@ class SolverBase():
             return value
         # TODO: nonlinear, function/expression of temperature, or any variable
         else:  # linear homogenous material, str, Expression, numbers.Number, Constant, Callable
-            return self.translate_value(value)
+            return value # self.translate_value(value)
             
     def get_body_source(self):
-        pass
+        return self.body_source
 
     def _translate_dict_value(self, value):
         """ body source, initial value or material for multiple subdomains 
@@ -284,7 +285,7 @@ class SolverBase():
             W = function_space
         else:
             W = self.function_space
-        if isinstance(value, (tuple, list)):  # json dump tuple into list
+        if isinstance(value, (tuple, list, np.ndarray)):  # json dump tuple into list
             if len(value) == self.dimension and isinstance(value[0], (numbers.Number)):
                 if isinstance(value, list):
                     value = tuple(value)
@@ -293,15 +294,12 @@ class SolverBase():
                 if isinstance(value, list):
                     value = Constant(tuple(value))
                 values_0 = interpolate(Expression(value, degree = _degree), W)
+            elif self.transient_settings['transient'] and len(value) > self.dimension:
+                values_0 = value[self.current_step]
             else:
                 print(' {} is supplied, but only tuple of number and string expr of dim = len(v) are supported'.format(type(value)))
-        elif self.transient_settings['transient']:  # transient only, different value for each time step
-            if isinstance(value, (list, np.ndarray)) and len(value) > self.dimension:
-                values_0 = value[self.current_step]
-            elif callable(value):
-                values_0 = value(self.current_time)
-            else:
-                raise TypeError('only numpy array or python function of time is supported for transient value')
+        elif callable(value) and self.transient_settings['transient']:
+            values_0 = value(self.current_time)
         elif isinstance(value, (numbers.Number)):
             values_0 = Constant(value)
         elif isinstance(value, (Constant, Function)):  # CellFunction isinstance of Function???
