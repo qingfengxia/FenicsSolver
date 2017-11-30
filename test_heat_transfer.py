@@ -195,7 +195,7 @@ def test_radiation(using_anisotropic_conductivity = True):
     bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'values': {
                     'temperature': {'variable': 'temperature', 'type': 'Dirichlet', 'value': Constant(T_cold)}
                  } }
-    settings['radiation_settings'] = {'ambient_temperature': T_ambient, 'emissivity': 0.9}
+    settings['radiation_settings'] = {'ambient_temperature': T_ambient-20, 'emissivity': 0.9}
     settings['convective_velocity'] = None
     solver = ScalerEquationSolver(settings)
     solver.material['conductivity'] = K
@@ -207,4 +207,4 @@ def test_radiation(using_anisotropic_conductivity = True):
 if __name__ == '__main__':
     #test(True)
     test(False)
-    #test_radiation(False)  # divergent, error in form
+    test_radiation(False)  # divergent, error in form

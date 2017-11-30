@@ -22,10 +22,12 @@ It functions like COMSOL or Moose, but it is free and it is made of Python.
 
 ## Installation
 
+It is python2 and python3 compatible, just as fenics itself.
+
 copy this folder to any place on the python search path (PYTHON_PATH), assuming fenics has been installed. 
 
 ```
-git clone https://github.com/qingfengxia/fsolvers.git
+git clone https://github.com/qingfengxia/FenicsSolver.git
 ```
 
 installation via PIP will be implemented later once API is stable. 

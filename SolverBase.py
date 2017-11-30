@@ -298,8 +298,6 @@ class SolverBase():
                 values_0 = value[self.current_step]
             else:
                 print(' {} is supplied, but only tuple of number and string expr of dim = len(v) are supported'.format(type(value)))
-        elif callable(value) and self.transient_settings['transient']:
-            values_0 = value(self.current_time)
         elif isinstance(value, (numbers.Number)):
             values_0 = Constant(value)
         elif isinstance(value, (Constant, Function)):  # CellFunction isinstance of Function???
@@ -307,6 +305,8 @@ class SolverBase():
         elif isinstance(value, (Expression, )): 
             # FIXME can not interpolate an expression, not necessary?
             values_0 = value  # interpolate(value, W)
+        elif callable(value) and self.transient_settings['transient']:  # Function is also callable
+            values_0 = value(self.current_time)
         elif isinstance(value, (str, )):  # file or string expression
             if os.path.exists(value):
                 # also possible continue from existent solution, or interpolate from diff mesh density
@@ -447,29 +447,31 @@ class SolverBase():
 
     ####################################
     def solve_linear_problem(self, F, u, Dirichlet_bcs):
-        """
-        a_T, L_T = system(F)
-        A_T = assemble(a_T)
+        if True:
+            a_T, L_T = system(F)
+            A_T = assemble(a_T)
+            b_T = assemble(L_T)
+            #for bc in bcs: print(type(bc))
+            [bc.apply(b_T) for bc in Dirichlet_bcs]  # apply Dirichlet BC
+            solver = LUSolver(A_T)
+            self.set_solver_parameters(solver)
 
-        b_T = assemble(L_T)
-        #for bc in bcs: print(type(bc))
-        [bc.apply(A_T, b_T) for bc in bcs]  # apply Dirichlet BC
-        solver = 
-        self.set_solver_parameters(solver)
+            solver.solve(u.vector(), b_T)
+        else:
+            problem = LinearVariationalProblem(lhs(F), rhs(F), u, Dirichlet_bcs)
+            solver = LinearVariationalSolver(problem)
+            self.set_solver_parameters(solver)
 
-        solver.solve(A_T, T.vector(), b_T)
-        """
-        problem = LinearVariationalProblem(lhs(F), rhs(F), u, Dirichlet_bcs)
-        solver = LinearVariationalSolver(problem)
-        self.set_solver_parameters(solver)
-
-        solver.solve()
+            solver.solve()
         return u
 
     def solve_nonlinear_problem(self, F, u_current, Dirichlet_bcs, J):
         problem = NonlinearVariationalProblem(F, u_current, Dirichlet_bcs, J)
         solver = NonlinearVariationalSolver(problem)
-        self.set_solver_parameters(solver)
+
+        #[print(p) for p in solver.parameters['newton_solver']]
+        solver.parameters['newton_solver']['maximum_iterations'] = 500
+        solver.parameters['newton_solver']['relaxation_parameter'] = 0.1
 
         solver.solve()
         return u_current
@@ -487,25 +489,10 @@ class SolverBase():
         parameters["mesh_partitioner"] = "SCOTCH"
         #parameters["form_compiler"]["representation"] = "quadrature"
         parameters["form_compiler"]["optimize"] = True
-        """
-        #solver.parameters["linear_solver"] = 'default'
-        #solver.parameters["preconditioner"] = 'default'
-        if using_MPI:
-            #parameters['linear_solver'] = 'bicgstab'  # "gmres" # not usable in MPI
-            parameters['preconditioner']= "hypre_euclid"
-        else:
-            #parameters['linear_solver'] = 'default'  # is not a parameter for LinearProblemSolver
-            parameters['preconditioner'] = "default"  # 'default', ilu only works in serial
-        """
-        """
+
         for key in self.solver_settings['solver_parameters']:
-            solver.parameters[key] = self.solver_settings['solver_parameters'][key]
-        #param = self.solver_settings['solver_parameters']
-        # these are only for iterative solver, the default solver, lusolver, neeed not such setttings
-        #solver.parameters["relative_tolerance"] = param["relative_tolerance"] 
-        #solver.parameters["maximum_iterations"] = param["maximum_iterations"]
-        #solver.parameters["monitor_convergence"] = param["monitor_convergence"]
-        """
+            if key in solver.parameters:
+                solver.parameters[key] = self.solver_settings['solver_parameters'][key]
 
     def solve_amg(self, F, u, bcs):
         A, b = assemble_system(lhs(F), rhs(F), bcs)

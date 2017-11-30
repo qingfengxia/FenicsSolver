@@ -116,8 +116,7 @@ class ScalerEquationSolver(SolverBase):
     def get_convective_velocity_function(self, convective_velocity):
         self.vector_space = VectorFunctionSpace(self.mesh, 'CG', self.degree+1)
         vel = self.translate_value(convective_velocity, self.vector_space)
-        #vel = interpolate(Expression(('x[0]', 'x[1]'), degree = 1), self.vector_space)
-        #vel = Constant((1.0, 1.0))
+        #print('type of convective_velocity', type(convective_velocity), type(vel))
         #print("vel.ufl_shape", vel.ufl_shape)
         return vel
 
@@ -243,7 +242,7 @@ class ScalerEquationSolver(SolverBase):
                 emissivity = 1.0
             T_ambient_radiaton = self.radiation_settings['ambient_temperature']
             m_ = emissivity * Stefan_constant
-            radiation_flux = m_*(pow(T, 4) - T_ambient_radiaton**4)  # it is nonlinear item
+            radiation_flux = m_*(T_ambient_radiaton**4 - pow(T, 4))  # it is nonlinear item
             print(m_, radiation_flux, F)
             F -= radiation_flux*Tq*ds # for all surface, without considering view angle
             F = action(F, T_current)  # API 1.0 still working ; newer API , replacing TrialFunction with Function for nonlinear 
@@ -253,23 +252,6 @@ class ScalerEquationSolver(SolverBase):
     def solve_static(self, F, T_current, bcs):
         if self.scaler_name == "temperature" and self.has_radiation:
             return self.solve_nonlinear_problem(F, T_current, bcs, self.J)
-            """
-            Stefan_constant = 5.670367e-8  # W/m-2/K-4
-            emissivity = self.material['emissivity']
-            T_ambient_radiaton = self.radiation_settings['ambient_temperature']
-            m_ = emissivity * Stefan_constant
-            #radiation_flux = interpolate(Expression("m_*(T - T_a)**4", m_ = m_, T= T, T_a = T_ambient_radiaton, \
-            #        degree = self.degree), self.function_space)
-
-            max_nonlinear_iteratons = 10
-            T_ = Function(self.function_space)
-            T_.assign(T_current)
-            for i in range(max_nonlinear_iteratons):
-                radiation_flux = m_*(pow(T_, 4) - T_ambient_radiaton**4)  # it is nonlinear item
-                F_ = F - radiation_flux*Tq*ds   # for all surface, without considering view angle
-                T_ = self.solve_linear_problem(F_, T_, bcs)
-            return T_
-            """
         else:
             return self.solve_linear_problem(F, T_current, bcs)
 
