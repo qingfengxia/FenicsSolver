@@ -443,7 +443,9 @@ class SolverBase():
     def plot(self):
         plot(self.result)
         if self.report_settings['plotting_interactive']:
-            interactive()
+            import matplotlib.pyplot as plt
+            plt.show()
+            #interactive()
 
     ####################################
     def solve_linear_problem(self, F, u, Dirichlet_bcs):

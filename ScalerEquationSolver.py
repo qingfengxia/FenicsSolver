@@ -56,6 +56,7 @@ class ScalerEquationSolver(SolverBase):
             self.scaler_name = self.settings['scaler_name'].lower()
         else:
             self.scaler_name = "temperature"
+        self.using_diffusion_form = False
 
         if self.scaler_name == "eletric_potential":
             assert self.settings['transient_settings']['transient'] == False
@@ -121,7 +122,8 @@ class ScalerEquationSolver(SolverBase):
         return vel
 
     def update_boundary_conditions(self, time_iter_, T, Tq, ds):
-        k = self.conductivity() # constant, experssion or tensor
+        capacity = self.capacity() # constant, experssion or tensor
+
         bcs = []
         integrals_N = []  # heat flux
         for name, bc_settings in self.boundary_conditions.items():
@@ -134,23 +136,37 @@ class ScalerEquationSolver(SolverBase):
                 bcs.append(dbc)
             elif bc['type'] == 'Neumann' or bc['type'] =='fixedGradient':  # unit: K/m
                 g = self.translate_value(bc['value'])
-                integrals_N.append(k*g*Tq*ds(i))  # only work for constant conductivty k
-                #integrals_N.append(inner(k * (normal*g), Tq)*ds(i))  # not working
-            elif bc['type'].lower().find('flux')>=0 or bc['type'] == 'electric_current':
-                # flux is a general flux, heatFlux: W/m2, it is not a general flux name
-                g = self.translate_value(bc['value'])
-                integrals_N.append(g*Tq*ds(i))
+                if self.using_diffusion_form:
+                    integrals_N.append(g*Tq*ds(i))
+                else:
+                    integrals_N.append(capacity*g*Tq*ds(i))
+                #integrals_N.append(inner(capacity * (normal*g), Tq)*ds(i))  # not working
+            elif bc['type'] == 'symmetry':
+                pass  # zero gradient
             elif bc['type'] == 'mixed' or bc['type'] == 'Robin':
                 T_bc = self.translate_value(bc['value'])
                 g = self.translate_value(bc['gradient'])
-                integrals_N.append(k*g*Tq*ds(i))  # only work for constant conductivty k
+                if self.using_diffusion_form:
+                    integrals_N.append(g*Tq*ds(i))
+                else:
+                    integrals_N.append(capacity*g*Tq*ds(i))
                 dbc = DirichletBC(self.function_space, T_bc, self.boundary_facets, i)
                 bcs.append(dbc)
+            elif bc['type'].lower().find('flux')>=0 or bc['type'] == 'electric_current':
+                # flux is a general flux density, heatFlux: W/m2 is not a general flux name
+                g = self.translate_value(bc['value'])
+                if self.using_diffusion_form:
+                    integrals_N.append(g*Tq*ds(i))
+                else:
+                    integrals_N.append(g/capacity*Tq*ds(i))
             elif bc['type'] == 'HTC':  # FIXME: HTC is not a general name or general type, only for thermal analysis
                 #Robin, how to get the boundary value,  T as the first, HTC as the second
                 Ta = self.translate_value(bc['ambient'])
                 htc = self.translate_value(bc['value'])  # must be specified in Constant or Expressed in setup dict
-                integrals_N.append( htc*(Ta-T)*Tq*ds(i))
+                if self.using_diffusion_form:
+                    integrals_N.append( htc/capacity*(Ta-T)*Tq*ds(i))
+                else:
+                    integrals_N.append( htc*(Ta-T)*Tq*ds(i))
             else:
                 raise SolverError('boundary type`{}` is not supported'.format(bc['type']))
         return bcs, integrals_N
@@ -168,7 +184,6 @@ class ScalerEquationSolver(SolverBase):
 
         bcs, integrals_N = self.update_boundary_conditions(time_iter_, T, Tq, ds)
         # boundary type is defined in FreeCAD FemConstraintFluidBoundary and its TaskPanel
-        # zeroGradient is default thermal boundary, no effect on equation?
 
         def get_source_item():
             if isinstance(self.body_source, dict):
@@ -211,7 +226,7 @@ class ScalerEquationSolver(SolverBase):
 
             F -= sum(integrals_N)  # included in F_static()
             if self.body_source:
-                print(self.body_source)
+                #print(self.body_source)
                 res -= self.get_body_source()
                 F -= get_source_item()
             # Add SUPG stabilisation terms
