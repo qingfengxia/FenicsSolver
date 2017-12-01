@@ -1,0 +1,26 @@
+dist: trusty
+#dist: xenial
+#https://docs.travis-ci.com/user/reference/trusty/,  python 2.7 default
+sudo: required
+language: python
+python:
+  - "2.7"
+ # - "3.6"
+
+# command to install dependencies
+install:
+  #- pip install -r requirements.txt
+  - add-apt-repository ppa:fenics-packages/fenics
+  - apt-get update
+  - if [[ $TRAVIS_PYTHON_VERSION == '2.7' ]]; then travis_retry apt-get install -y fenics python-dolfin python-matplotlib python-numpy; fi
+  - if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then travis_retry apt-get install -y fenics python3-dolfin python3-matplotlib python3-numpy; fi
+  # need to install if we want to run the test
+  - travis_retry python setup.py install
+
+# Run the tests once from the source directory to detect issues
+script:
+  - pwd
+  - if  [ -d 'examples' ] ; then cd examples; fi
+  - python  test_cfd_solver.py
+
+# auto package to pypi will be done later
