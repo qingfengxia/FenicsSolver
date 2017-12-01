@@ -10,12 +10,12 @@ python:
 # command to install dependencies
 install:
   #- pip install -r requirements.txt
-  - add-apt-repository ppa:fenics-packages/fenics
-  - apt-get update
-  - if [[ $TRAVIS_PYTHON_VERSION == '2.7' ]]; then travis_retry apt-get install -y fenics python-dolfin python-matplotlib python-numpy; fi
-  - if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then travis_retry apt-get install -y fenics python3-dolfin python3-matplotlib python3-numpy; fi
+  - sudo add-apt-repository ppa:fenics-packages/fenics
+  - sudo apt-get update
+  - if [[ $TRAVIS_PYTHON_VERSION == '2.7' ]]; then travis_retry sudo apt-get install -y fenics python-dolfin python-matplotlib python-numpy; fi
+  - if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then travis_retry sudo apt-get install -y fenics python3-dolfin python3-matplotlib python3-numpy; fi
   # need to install if we want to run the test
-  - travis_retry python setup.py install
+  - travis_retry sudo python setup.py install
 
 # Run the tests once from the source directory to detect issues
 script:
