@@ -87,38 +87,12 @@ def main(case_input):
     #plot may be done by ParaView or by fenics solver.plot()
     solver.plot()
 
-def test_elasticity():
-    pass
-
-def test_CFD():
-    df = './data/TestCFD.json'
-    settings = load_settings(df)  # force python2 load ascii string
-    #settings['case_folder'] = os.path.dirname(__file__) + os.path.sep + "data"
-    import CoupledNavierStokesSolver
-    solver = CoupledNavierStokesSolver.CoupledNavierStokesSolver(settings)
-    solver.print()
-    solver.solve()
-    solver.plot()
-
-def test_heat_transfer():
-    #print(os.path.dirname(__file__))  # __file__ is absolute path for python 3.4+
-    df = './data/TestHeatTransfer.json'
-    settings = load_settings(df)
-    #settings['case_folder'] = os.path.dirname(__file__) + os.path.sep + "data"
-    solver = ScalerEquationSolver.ScalerEquationSolver(settings)
-    solver.print()
-    solver.solve()
-    solver.plot()
-
 if __name__ == "__main__":
     # will mpirun also affect argv? No, the first is always the one following `python`, i.e. `main.py`
     print(sys.argv)
     if len(sys.argv) < 2:
-
         print("Not enough input argument, Usage: `python main.py case_input` \n run testing instead")
         #  must start this solver in FenicsSolver folder
 
-        test_heat_transfer()
-        #test_CFD()  # not converging
     else:
         main(sys.argv[1])

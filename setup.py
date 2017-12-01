@@ -1,7 +1,7 @@
 """
 uploading to pypi is delayed until API is stable
 https://packaging.python.org/tutorials/distributing-packages/#setup-py
-
+#python setup.py bdist_wheel --universal
 """
 
 # Always prefer setuptools over distutils
