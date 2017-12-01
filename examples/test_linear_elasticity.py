@@ -25,10 +25,10 @@ import math
 import numpy as np
 
 from dolfin import *
-import LinearElasticitySolver
-import SolverBase
+from FenicsSolver import LinearElasticitySolver
+from FenicsSolver import SolverBase
 
-def test():
+def test(interactively = False):
 
     xmin, xmax = 0, 8
     ymin, ymax = 0, 1
@@ -130,7 +130,8 @@ def test():
 
     plot(solver.von_Mises(u), title='Stress von Mises')
     #if not run by pytest
-    interactive()
+    if interactively:
+        interactive()
 
     ###################################
     if False:

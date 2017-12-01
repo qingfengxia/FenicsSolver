@@ -449,7 +449,7 @@ class SolverBase():
 
     ####################################
     def solve_linear_problem(self, F, u, Dirichlet_bcs):
-        if True:
+        if False:  # LU solver cause errors for heat transfer examples
             a_T, L_T = system(F)
             A_T = assemble(a_T)
             b_T = assemble(L_T)

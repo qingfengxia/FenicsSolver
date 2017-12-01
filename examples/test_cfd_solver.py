@@ -27,7 +27,6 @@ import math
 import numpy as np
 
 from dolfin import *
-import SolverBase
 
 transient = False
 T_ambient =300
@@ -126,6 +125,7 @@ def setup(using_elbow = True, using_3D = False, compressible=False):
         bcs[k] = bcs_u[k]
 
     import copy
+    from FenicsSolver import SolverBase
     s = copy.copy(SolverBase.default_case_settings)
     s['mesh'] = mesh
     print(info(mesh))
@@ -134,12 +134,12 @@ def setup(using_elbow = True, using_3D = False, compressible=False):
 
     return s
 
-def test_compressible(compressible = True, is_interactive = False):
+def test_compressible(is_interactive = False):
     s = setup(using_elbow = True, using_3D = True, compressible = True)
     fluid = {'name': 'ideal gas', 'kinematic_viscosity': 1e8, 'density': 1.3}
     s['material'] = fluid
 
-    import CompressibleNSSolver
+    from FenicsSolver import CompressibleNSSolver
     solver = CompressibleNSSolver.CompressibleNSSolver(s)  # set a very large viscosity for the large inlet width
     #solver.init_values = Expression(('1', '0', '1e-5'), degree=1)
     u,p, T= split(solver.solve())
@@ -149,7 +149,7 @@ def test_compressible(compressible = True, is_interactive = False):
     if is_interactive:
         interactive()
 
-def test_incompressible(compressible = False, is_interactive=False):
+def test_incompressible(is_interactive=False):
     s = setup(using_elbow = True, using_3D = False, compressible = False)
     solving_energy_equation = False
 
@@ -157,7 +157,7 @@ def test_incompressible(compressible = False, is_interactive=False):
     fluid = {'name': 'oil', 'kinematic_viscosity': 1e3, 'density': 800}
     s['material'] = fluid
 
-    import CoupledNavierStokesSolver
+    from FenicsSolver import CoupledNavierStokesSolver
     solver = CoupledNavierStokesSolver.CoupledNavierStokesSolver(s)  # set a very large viscosity for the large inlet width
     #solver.init_values = Expression(('1', '0', '1e-5'), degree=1)
     u,p= split(solver.solve())
@@ -166,7 +166,7 @@ def test_incompressible(compressible = False, is_interactive=False):
     #plot(solver.viscous_heat(u,p))
 
     if solving_energy_equation:  # not fully tested
-        from . import  ScalerEquationSolver
+        from FenicsSolver import  ScalerEquationSolver
         solver_T = ScalerEquationSolver.ScalerEquationSolver(s)
         #Q = solver.function_space.sub(1)  # seem it is hard to share vel between. u is vectorFunction
         Q = solver_T.function_space
@@ -179,7 +179,7 @@ def test_incompressible(compressible = False, is_interactive=False):
         interactive()
 
 if __name__ == '__main__':
-    test_incompressible(True, False)
+    test_incompressible()
     # manually call test function,  if discovered by google test, it will not plot in interactive mode
     #test_incompressible(False, True)  # Elbow 3D is slow but possible
     #test_compressible(True, True)

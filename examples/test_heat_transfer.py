@@ -26,7 +26,7 @@ import numpy as np
 
 from dolfin import *
 
-from ScalerEquationSolver import ScalerEquationSolver
+from FenicsSolver.ScalerEquationSolver  import ScalerEquationSolver
 
 #mesh = UnitCubeMesh(20, 20, 20)
 mesh = UnitSquareMesh(40, 40)
@@ -57,7 +57,8 @@ bcs = {
                  'temperature': {'variable': 'temperature', 'type': 'heatFlux', 'value': Constant(0)}
                  } },  # unit: K/m
         "right":  {'boundary': right, 'boundary_id': 4, 'values': {
-                 'temperature': {'variable': 'temperature', 'type': 'heatFlux', 'value': Constant(0)}
+                 #'temperature': {'variable': 'temperature', 'type': 'heatFlux', 'value': Constant(0)}
+                 'temperature': {'variable': 'temperature', 'type': 'symmetry', 'value': None}
                  } }
         #back and front is zero gradient, need not set, it is default
 }
@@ -125,9 +126,8 @@ c.c22 = c22
 K = as_matrix(((c[0], c[1]), (c[1], c[2])))
 """
 
-def test(using_anisotropic_conductivity = True):
-    using_convective_velocity = not using_anisotropic_conductivity
-    using_HTC = False
+def setup(using_anisotropic_conductivity, using_convective_velocity, using_DG_solver, using_HTC, interactively):
+
     if using_anisotropic_conductivity:
         #tensor-weighted-poisson/python/demo_tensor-weighted-poisson.py
         K = K_anisotropic
@@ -136,18 +136,18 @@ def test(using_anisotropic_conductivity = True):
         print("analytical heat flux [w/m^2] = ", heat_flux)
 
     if not using_HTC:
-        if using_convective_velocity:
+        if False: #using_convective_velocity:
             bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'values': {
                             'temperature': {'variable': 'temperature', 'type': 'Dirichlet', 'value': Constant(T_cold)}
                          } }
         else:
             bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'values': {
-                            'temperature': {'variable': 'temperature',  'type': 'heatFlux', 'value': Constant(heat_flux)}
+                            'temperature': {'variable': 'temperature', 'type': 'heatFlux', 'value': Constant(heat_flux)}
                          } }
     else:
         htc = 100
         bcs["hot"] = {'boundary': top, 'boundary_id': 1, 'values': {
-                        'temperature': {'variable': 'temperature',  'type': 'heatFlux', 'value': Constant(heat_flux*10)}
+                        'temperature': {'variable': 'temperature',  'type': 'heatFlux', 'value': Constant(heat_flux)}
                      } }
         bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'values': {
                         'temperature': {'variable': 'temperature', 'type': 'HTC', 'value': Constant(htc), 'ambient': Constant(T_ambient)}
@@ -157,16 +157,21 @@ def test(using_anisotropic_conductivity = True):
         settings['convective_velocity'] =  Constant((0.5, -0.5))
     else:
         settings['convective_velocity'] = None
-    solver = ScalerEquationSolver(settings)
+    if using_DG_solver:
+        from Fenics.ScalerEquationDGSolver import ScalerEquationDGSolver
+        solver = ScalerEquationDGSolver(settings)
+    else:
+        solver = ScalerEquationSolver(settings)
+
     solver.material['conductivity'] = K
     #debugging: show boundary selection
     plot(solver.boundary_facets, title="boundary facets colored by ID")
     plot(solver.subdomains, title="subdomain cells colored by ID")
 
     T = solver.solve()
-    post_process(T)
+    post_process(T, interactively)
 
-def post_process(T):
+def post_process(T, interactively):
     # Report flux, they should match
     normal = FacetNormal(mesh)
     boundary_facets = FacetFunction('size_t', mesh)
@@ -176,13 +181,14 @@ def post_process(T):
     ds= Measure("ds", subdomain_data=boundary_facets)
 
     flux = assemble(conductivity * dot(grad(T), normal)*ds(id))
-    print("tuft heat flux rate integral on the surface(w/m^2)", flux)
+    print("heat flux rate integral on the surface(w/m^2)", flux)
 
     plot(T, title='Temperature')
-    #plot(mesh)
-    interactive()
+    if interactively:
+        interactive()
 
-def test_radiation(using_anisotropic_conductivity = True):
+def test_radiation(interactively):
+    using_anisotropic_conductivity = False
     if using_anisotropic_conductivity:
         #tensor-weighted-poisson/python/demo_tensor-weighted-poisson.py
         K = K_anisotropic
@@ -202,9 +208,14 @@ def test_radiation(using_anisotropic_conductivity = True):
     solver.material['emissivity'] = 0.9
 
     T = solver.solve()
-    post_process(T)
+    post_process(T, interactively)
+
+def test(interactively = False):
+    #test(using_anisotropic_conductivity = True, using_convective_velocity = False, using_DG_solver = False, using_HTC = False, interactively=interactively)
+    setup(using_anisotropic_conductivity = False, using_convective_velocity = False, using_DG_solver = False, using_HTC = True, interactively = interactively)
+ 
+    #setup(using_anisotropic_conductivity = False, using_convective_velocity = True, using_DG_solver = True, using_HTC = True, interactively = interactively)
+    #test_radiation(False)
 
 if __name__ == '__main__':
-    #test(True)
-    test(False)
-    test_radiation(False)  # divergent, error in form
+    test()

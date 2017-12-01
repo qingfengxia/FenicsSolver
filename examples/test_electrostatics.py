@@ -26,6 +26,7 @@ import numpy as np
 
 from dolfin import *
 
+from FenicsSolver import ScalerEquationSolver
 from ScalerEquationSolver import ScalerEquationSolver
 
 #mesh = UnitCubeMesh(20, 20, 20)
@@ -85,9 +86,10 @@ settings = {'solver_name': 'ScalerEquationSolver',
                 'scaler_name': 'electric_potential',
                 }
 
-def test(using_anisotropic_material = True):
+def test(interactively = False):
     using_convective_velocity = False
 
+    using_anisotropic_material = True
     if using_anisotropic_material:
         #tensor-weighted-poisson/python/demo_tensor-weighted-poisson.py
         settings['material']['electric_permittivity'] = K_anisotropic
@@ -108,9 +110,9 @@ def test(using_anisotropic_material = True):
     plot(solver.subdomains, "subdomain cells colored by ID")
 
     T = solver.solve()
-    post_process(T)
+    post_process(T, interactively)
 
-def post_process(T):
+def post_process(T, interactively):
     # Report flux, they should match
     normal = FacetNormal(mesh)
     boundary_facets = FacetFunction('size_t', mesh)
@@ -124,8 +126,8 @@ def post_process(T):
 
     plot(T, title='electric Potential (V)')
     #plot(mesh)
-    interactive()
+    if interactively:
+        interactive()
 
 if __name__ == '__main__':
-    test(False)
-    #test_radiation(False)  # divergent
+    test()

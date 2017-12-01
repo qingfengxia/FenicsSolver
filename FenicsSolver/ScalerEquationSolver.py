@@ -156,9 +156,9 @@ class ScalerEquationSolver(SolverBase):
                 # flux is a general flux density, heatFlux: W/m2 is not a general flux name
                 g = self.translate_value(bc['value'])
                 if self.using_diffusion_form:
-                    integrals_N.append(g*Tq*ds(i))
-                else:
                     integrals_N.append(g/capacity*Tq*ds(i))
+                else:
+                    integrals_N.append(g*Tq*ds(i))
             elif bc['type'] == 'HTC':  # FIXME: HTC is not a general name or general type, only for thermal analysis
                 #Robin, how to get the boundary value,  T as the first, HTC as the second
                 Ta = self.translate_value(bc['ambient'])
@@ -175,12 +175,13 @@ class ScalerEquationSolver(SolverBase):
         # T, Tq can be shared between time steps, form is unified diffussion coefficient
         normal = FacetNormal(self.mesh)
 
-        dx= Measure("dx", subdomain_data=self.subdomains)  # 
+        dx= Measure("dx", subdomain_data=self.subdomains)  # cells
         ds= Measure("ds", subdomain_data=self.boundary_facets)
 
         conductivity = self.conductivity() # constant, experssion or tensor
         capacity = self.capacity()  # density * specific capacity -> volumetrical capacity
         diffusivity = self.diffusivity()  # diffusivity
+        #print(conductivity, capacity, diffusivity)
 
         bcs, integrals_N = self.update_boundary_conditions(time_iter_, T, Tq, ds)
         # boundary type is defined in FreeCAD FemConstraintFluidBoundary and its TaskPanel
@@ -188,7 +189,7 @@ class ScalerEquationSolver(SolverBase):
         def get_source_item():
             if isinstance(self.body_source, dict):
                 S = []
-                for k,v in self.get_body_source().items():
+                for k,v in self.body_source.items():
                     # it is good to using DG for multi-scale meshing, subdomain marking double
                     S.append(v['value']*Tq*dx(v['subdomain_id']))
                 return sum(S)
@@ -248,7 +249,7 @@ class ScalerEquationSolver(SolverBase):
             #print(F, get_source_item())
             if self.body_source:
                 F -= get_source_item() 
-
+        print(F)
         if self.scaler_name == "temperature" and self.has_radiation:
             Stefan_constant = 5.670367e-8  # W/m-2/K-4
             if 'emissivity' in self.material:
