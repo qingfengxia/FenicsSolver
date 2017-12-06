@@ -248,8 +248,15 @@ class SolverBase():
         elif 'scaler_name' in self.settings and isinstance(v0, (str, numbers.Number)):
             _initial_values_expr = Expression(str(v0), degree = self.degree)
             u0 = interpolate(_initial_values_expr, self.function_space)
+        elif isinstance(v0, (Function,)):
+            try:
+                u0 = Function(v0)  # same mesh and function space
+            except:
+                u0 = project(v0, self.function_space)
+        elif os.path.exists(v0):  # a filename containg a GenericVector
+            Function(self.function_space, v0)
         else:
-            raise SolverError('only number and str are supported as initial values')
+            raise SolverError('only number, file, another function, str expr are supported as initial values')
         return u0
 
     def get_material_value(self, value):

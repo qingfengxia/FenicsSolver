@@ -1,26 +1,24 @@
 dist: trusty
-#dist: xenial
-#https://docs.travis-ci.com/user/reference/trusty/,  python 2.7 default
+#dist: xenial is not supported, python2 is the default for trusty
+# while fenics PPA for fenics does not support trusty, test is commented out
 sudo: required
 language: python
 python:
-  - "2.7"
- # - "3.6"
-
-# command to install dependencies
+- '2.7'
 install:
-  #- pip install -r requirements.txt
-  - sudo add-apt-repository ppa:fenics-packages/fenics -y
-  - sudo apt-get update -q
-  - if [[ $TRAVIS_PYTHON_VERSION == '2.7' ]]; then travis_retry sudo apt-get install -y fenics python-dolfin python-matplotlib python-numpy; fi
-  - if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then travis_retry sudo apt-get install -y fenics python3-dolfin python3-matplotlib python3-numpy; fi
-  # need to install if we want to run the test
-  - travis_retry sudo python setup.py install
-
-# Run the tests once from the source directory to detect issues
+- sudo add-apt-repository ppa:fenics-packages/fenics -y
+- sudo apt-get update -q
+- if [[ $TRAVIS_PYTHON_VERSION == '2.7' ]]; then travis_retry sudo apt-get install
+  -y fenics python-dolfin python-matplotlib python-numpy; fi
+- if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then travis_retry sudo apt-get install
+  -y fenics python3-dolfin python3-matplotlib python3-numpy; fi
+- travis_retry sudo python setup.py install
 script:
-  - pwd
-  - if  [ -d 'examples' ] ; then cd examples; fi
-  - python  test_cfd_solver.py
+- pwd
+- if  [ -d 'examples' ] ; then cd examples; fi
 
-# auto package to pypi will be done later
+deploy:
+  provider: pypi
+  user: qingfeng.xia
+  password:
+    secure: M/s6AFn6GXE0UCZyiMJ0C+lZSmtdo/BYmkx0CrsJDt/Tfov50i1vnVAw25kHctY0M3wSUFCCwcsy443P2rkjpk1UtxvUnbWIKa3wf5BuGeWznA3AHaG26t6OA7O7G3GkgVAHsypqKtnDaSaxFxgYeMcxH4HlB8jw39q4lAhjyMrRmqYZjks8dhCAbCxoMnIP9phUm3sXvy3gJYI8wirP8JBERI2b9v2VFwMC1v3ZO4hhr/90GiVGjzvckXONlc4PK3pJGDZYWvlGa2mSp1qg1vHED/FofUCrMOyDMiZevzLLSBFzmK24d8Qu45bYHbIJU3ugJurBLwuUdK/RWntE7WUZW1M9NewS2E6Uvrx2u1nqjf9RHsdsGCVTt2KnnVSl7ys3w7Ka7yfKSk+gjD34Hyjk63ULepGWfpp4dvWpbu7JyqUWHojt1xMKHZf3y7FSjbMqaJ7Ee8t4Z78c5uRRMxU9c80LI1H6NXTds4DN5XYTPr7CeA7QucLW/WOt2QvRWUaEwKb9K/VTbRf1RDqK0rHe8hEOBKuz6P+R6UK6PqGFPiZmW9vEr3vQh9CqrbiMc0PdfATtaXFCay4gPoI2FvOoE7Bt+1R20kOi7XPb7Kg5zTAd/ve5ZcAHragcque1XelVmQ+COw1oLrgO507UHoO06jYcNzbjQW/FY4Qx/Rc=
