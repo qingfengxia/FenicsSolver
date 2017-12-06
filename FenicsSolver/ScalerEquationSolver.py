@@ -60,18 +60,7 @@ class ScalerEquationSolver(SolverBase):
 
         if self.scaler_name == "eletric_potential":
             assert self.settings['transient_settings']['transient'] == False
-
-        if self.scaler_name == "temperature":
-            if 'radiation_settings' in self.settings:
-                self.radiation_settings = self.settings['radiation_settings']
-                self.has_radiation = True
-            else:
-                self.has_radiation = False
-
-        if 'convective_velocity' in self.settings and self.settings['convective_velocity']:
-            self.convective_velocity = self.settings['convective_velocity']
-        else:
-            self.convective_velocity = None
+        #delay the convective velocity and radiation setting detection in geneate_form()
 
     def capacity(self):
         # to calc diffusion coeff : conductivity/capacity, it must be number only
@@ -207,6 +196,7 @@ class ScalerEquationSolver(SolverBase):
             return F
 
         def F_convective():
+            print('solving convection by SPUG stablization')
             h = CellSize(self.mesh)  # cell size
             velocity = self.get_convective_velocity_function(self.convective_velocity)
             if self.transient_settings['transient']:
@@ -235,6 +225,12 @@ class ScalerEquationSolver(SolverBase):
             F += (h/(2.0*vnorm))*dot(velocity, grad(Tq))*res*dx
             return F
 
+        if not hasattr(self, 'convective_velocity'):  # if velocity is not directly assigned to the solver
+            if 'convective_velocity' in self.settings and self.settings['convective_velocity']:
+                self.convective_velocity = self.settings['convective_velocity']
+            else:
+                self.convective_velocity = None
+
         if self.convective_velocity:  # convective heat conduction
             F = F_convective()
         else:
@@ -249,24 +245,41 @@ class ScalerEquationSolver(SolverBase):
             #print(F, get_source_item())
             if self.body_source:
                 F -= get_source_item() 
-        print(F)
-        if self.scaler_name == "temperature" and self.has_radiation:
-            Stefan_constant = 5.670367e-8  # W/m-2/K-4
-            if 'emissivity' in self.material:
-                emissivity = self.material['emissivity']  # self.settings['radiation_settings']['emissivity'] 
+        #print(F)
+        if self.scaler_name == "temperature":
+            if ('radiation_settings' in self.settings and self.settings['radiation_settings']):
+                self.radiation_settings = self.settings['radiation_settings']
+                self.has_radiation = True
+            elif hasattr(self, 'radiation_settings') and self.radiation_settings:
+                self.has_radiation = True
             else:
-                emissivity = 1.0
-            T_ambient_radiaton = self.radiation_settings['ambient_temperature']
-            m_ = emissivity * Stefan_constant
-            radiation_flux = m_*(T_ambient_radiaton**4 - pow(T, 4))  # it is nonlinear item
-            print(m_, radiation_flux, F)
-            F -= radiation_flux*Tq*ds # for all surface, without considering view angle
-            F = action(F, T_current)  # API 1.0 still working ; newer API , replacing TrialFunction with Function for nonlinear 
-            self.J = derivative(F, T_current, T)  # Gateaux derivative
+                self.has_radiation = False
+
+            if self.has_radiation:
+                Stefan_constant = 5.670367e-8  # W/m-2/K-4
+                if 'emissivity' in self.material:
+                    emissivity = self.material['emissivity']  # self.settings['radiation_settings']['emissivity'] 
+                elif 'emissivity' in self.radiation_settings:
+                    emissivity = self.radiation_settings['emissivity'] 
+                else:
+                    emissivity = 1.0
+                if 'ambient_temperature' in self.radiation_settings:
+                    T_ambient_radiaton = self.radiation_settings['ambient_temperature']
+                else:
+                    T_ambient_radiaton = self.reference_values['temperature']
+
+                m_ = emissivity * Stefan_constant
+                radiation_flux = m_*(T_ambient_radiaton**4 - pow(T, 4))  # it is nonlinear item
+                print(m_, radiation_flux, F)
+                F -= radiation_flux*Tq*ds # for all surface, without considering view angle
+                F = action(F, T_current)  # API 1.0 still working ; newer API , replacing TrialFunction with Function for nonlinear 
+                self.J = derivative(F, T_current, T)  # Gateaux derivative
+
         return F, bcs
 
     def solve_static(self, F, T_current, bcs):
         if self.scaler_name == "temperature" and self.has_radiation:
+            print('solving radiation by nonlinear solver')
             return self.solve_nonlinear_problem(F, T_current, bcs, self.J)
         else:
             return self.solve_linear_problem(F, T_current, bcs)
