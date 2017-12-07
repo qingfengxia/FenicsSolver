@@ -46,9 +46,9 @@ class LinearElasticitySolver(SolverBase):
     placity (nonlinear elastic) will be implemented in another solver
     """
     def __init__(self, case_settings):
+        case_settings['vector_name'] = 'displacement'
         SolverBase.__init__(self, case_settings)
 
-        self.settings['vector_name'] = 'displacement'
         # there must be a value for body force as source item, to make L not empyt in a == L
         #todo: moved to SolverBase
         if self.body_source:
@@ -59,25 +59,7 @@ class LinearElasticitySolver(SolverBase):
             else:
                 self.body_source = Constant((0, 0))
 
-        # thermal stress, material 
-        if 'temperature_distribution' in case_settings:
-            self.thermal_stress = True
-            self.temperature_distribution = case_settings['temperature_distribution']
-
         self.solving_modal = False
-
-    def set_function_space(self, mesh_or_function_space, periodic_boundary):
-        try:
-            self.mesh = mesh_or_function_space
-            if periodic_boundary:
-                self.function_space = VectorFunctionSpace(self.mesh, "CG", self.degree, constrained_domain=periodic_boundary)
-                # the group and degree of the FE element.
-            else:
-                self.function_space = VectorFunctionSpace(self.mesh, "CG", self.degree)
-        except:
-            self.function_space = mesh_or_function_space
-            self.mesh = self.function_space.mesh()
-        self.is_mixed_function_space = False  # how to detect it is mixed, vector, scaler , tensor?
 
 
     def sigma(self, u):
@@ -172,8 +154,11 @@ class LinearElasticitySolver(SolverBase):
         if self.body_source:
             integrals_F.append( inner(self.body_source, v)*dx )
 
-        ## thermal stress not tested, todo: thermal_stress_settings = {}
-        if self.temperature_distribution:
+        # thermal stress, material 
+        if 'temperature_distribution' in self.settings and self.settings['temperature_distribution']:
+            self.has_thermal_stress = True
+            self.temperature_distribution = self.settings['temperature_distribution']
+            ## thermal stress not tested, todo: thermal_stress_settings = {}
             T = self.translate_value(self.temperature_distribution)  # interpolate
             tec = self.material['thermal_expansion_coefficient']
             # only apply if the body is NOT freely expensible in all directions, with displacement constraint

@@ -209,13 +209,20 @@ class SolverBase():
             raise SolverError('mesh or function space must specified to construct solver object')
 
     def generate_function_space(self, periodic_boundary):
-        if periodic_boundary:
-            self.function_space = FunctionSpace(self.mesh, "CG", self.degree, constrained_domain=periodic_boundary)
-            # the group and degree of the FE element.
+        if "scaler_name" in self.settings:
+            if periodic_boundary:
+                self.function_space = FunctionSpace(self.mesh, "CG", self.degree, constrained_domain=periodic_boundary)
+                # the group and degree of the FE element.
+            else:
+                self.function_space = FunctionSpace(self.mesh, "CG", self.degree)
+        elif "vector_name" in self.settings:
+            if periodic_boundary:
+                self.function_space = VectorFunctionSpace(self.mesh, "CG", self.degree, constrained_domain=periodic_boundary)
+                # the group and degree of the FE element.
+            else:
+                self.function_space = VectorFunctionSpace(self.mesh, "CG", self.degree)
         else:
-            self.function_space = FunctionSpace(self.mesh, "CG", self.degree)
-        #except:
-        #   raise SolverError('Fail to generate function space from mesh')
+            raise SolverError('only scaler or vector solver has a base method of generate_function_space()')
 
     def generate_boundary_facets(self):
         boundary_facets = FacetFunction('size_t', self.mesh)

@@ -109,7 +109,7 @@ def test(interactively = False):
     s['boundary_conditions'] = bcs
     s['temperature_distribution']=None
     #s['vector_name'] = 'displacement'
-    s['solver_settings']['reference_values'] = {'temperature':293 },  # solver specific setting
+    s['solver_settings']['reference_values'] = {'temperature':293 }  # solver specific setting
 
     solver = LinearElasticitySolver.LinearElasticitySolver(s)  # body force test passed
     #solver.temperature_distribution = Expression("dT * x[1]/ymax", dT = 100, ymax=ymax, degree=1)
