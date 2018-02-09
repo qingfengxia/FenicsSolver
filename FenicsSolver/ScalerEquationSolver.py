@@ -37,7 +37,7 @@ supported_scaler_equations = {'temperature', 'electric_potential', 'species_conc
 # thermal diffusivity = (thermal conductivity) / (density * specific heat)
 # thermal volumetric capacity = density * specific heat
 
-from SolverBase import SolverBase, SolverError
+from .SolverBase import SolverBase, SolverError
 class ScalerEquationSolver(SolverBase):
     """  this is a general scaler solver, modelled after Heat Transfer Equation, other solver can derive from this basic one
     # 4 types of boundaries supported:
@@ -197,7 +197,7 @@ class ScalerEquationSolver(SolverBase):
 
         def F_convective():
             print('solving convection by SPUG stablization')
-            h = CellSize(self.mesh)  # cell size
+            h = 2*Circumradius(self.mesh)  # cell size
             velocity = self.get_convective_velocity_function(self.convective_velocity)
             if self.transient_settings['transient']:
                 dt = self.get_time_step(time_iter_)

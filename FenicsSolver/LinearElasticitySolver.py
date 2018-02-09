@@ -39,7 +39,7 @@ if not has_linear_algebra_backend("PETSc"):
 parameters["linear_algebra_backend"] = "PETSc"
 
 
-from SolverBase import SolverBase, SolverError
+from .SolverBase import SolverBase, SolverError
 class LinearElasticitySolver(SolverBase):
     """ transient and thermal stress is implemented but not tested
     contact boundary is not implemented,
