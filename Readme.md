@@ -22,7 +22,8 @@ It functions like COMSOL or Moose, but it is free and it is made of Python.
 
 ## Installation
 
-It is python2 and python3 compatible, just as fenics itself.
+It is python2 and python3 compatible, just as fenics itself. For Fenics version 2017.2 on ubuntu, Python3 is recommended, since there is some binary string/unicode problem in Python 2.
+Fenics 2017.2 also remove VTK plotting, and most of plotting in FenicsSolver examples are ignored.
 
 copy this folder to any place on the python search path (PYTHON_PATH), assuming fenics has been installed. 
 
@@ -36,11 +37,11 @@ installation via PIP will be implemented later once API is stable.
 
 This package is under heavy refactoring, considered alpha.
 
-Fenics version tested is on Ubuntu16.04, python 2.7 with/without FreeCAD 0.17 dev.
+This package is python 2 and python 3 compatibe, but current FreeCAD supports only Python2 for the time being.
+Fenics version 2017.1 tested is on Ubuntu16.04, python 2.7 with/without FreeCAD 0.17 dev.
+Fenics version 2017.2 tested is on Ubuntu16.04 and Python 3, without FreeCAD GUI. 
 
 Run the python script files with "test_" suffix, which are gtest compatible. 
-
-This package is python 2 and python 3 compatibe, but current FreeCAD supports only Python2.
 
 
 ## Roadmap and progress
@@ -58,7 +59,7 @@ Case setup: json file format is the text case setup file, mapping directly to an
 Meanwhile, FreeCAD developer *joha2* has added mesh export function in FemWorkbench, once the boundary mesh can be exported, case setup for fenics solver will be write in FreeCAD workbench.
 
 
-### 3. Coupling of multiple solvers in series
+### 3. Coupling of multiple solvers in series (planned in late 2018)
 
 Not yet designed.
 

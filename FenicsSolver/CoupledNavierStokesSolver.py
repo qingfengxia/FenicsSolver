@@ -39,7 +39,7 @@ TODO:
 3. test parallel by MPI
 """
 
-from SolverBase import SolverBase
+from .SolverBase import SolverBase
 class CoupledNavierStokesSolver(SolverBase):
     """  incompressible and laminar only
     """
@@ -295,7 +295,7 @@ class CoupledNavierStokesSolver(SolverBase):
         under_relax_ratio = 0.7
         up_temp = Function(self.function_space)  # a temporal to save value in the Picard loop
 
-        timer_solver = Timer("TimerSolveStatic")
+        timer_solver = Timer(u"TimerSolveStatic")
         timer_solver.start()
         while (iter_ < max_iter and eps > tol):
             # solve the linear stokes flow to avoid up_s = 0
@@ -326,7 +326,7 @@ class CoupledNavierStokesSolver(SolverBase):
 
     def plot(self):
         u,p= split(self.result)
-        plot(u)
+        plot(u)  # error in plot() for version 2017.2 in Python3
         plot(p)
         if self.report_settings['plotting_interactive']:
             interactive()

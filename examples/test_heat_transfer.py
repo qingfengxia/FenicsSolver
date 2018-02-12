@@ -165,7 +165,7 @@ def setup(using_anisotropic_conductivity, using_convective_velocity, using_DG_so
 
     solver.material['conductivity'] = K
     #debugging: show boundary selection
-    plot(solver.boundary_facets, title="boundary facets colored by ID")
+    plot(solver.boundary_facets, title="boundary facets colored by ID")  # matplotlib can not plot 1D
     plot(solver.subdomains, title="subdomain cells colored by ID")
 
     T = solver.solve()

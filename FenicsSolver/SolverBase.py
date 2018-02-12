@@ -22,14 +22,29 @@
 # ***************************************************************************
 
 
-from __future__ import print_function, division
-#import math may cause error
+from __future__ import print_function, division, absolute_import, unicode_literals
+
+# make python2 and python3 compatible for unicode type, basestring is not existed in Python3
+import sys
+if sys.version_info[0]>=3:
+   #str = str
+   unicode = str
+   bytes = bytes
+   basestring = (str,bytes)
+else:
+   str = str
+   #unicode = unicode
+   bytes = str
+   basestring = basestring
+
+
 import numbers
 import copy
 import logging
 import numpy as np
 import os.path
 
+# import math may cause error
 from dolfin import *
 
 class SolverError(Exception):
@@ -107,9 +122,9 @@ class SolverBase():
         self.dimension = self.mesh.geometry().dim()
         self.is_mixed_function_space = False  # todo: how to detect it is mixed?
         if not hasattr(self, 'subdomains'):
-            self.subdomains = CellFunction("size_t", self.mesh)
+            self.subdomains = MeshFunction("size_t", self.mesh, self.dimension)
 
-        ## 
+        ##
         if 'body_source' in s and s['body_source']:
             self.body_source = s['body_source']
         else:
@@ -158,14 +173,14 @@ class SolverBase():
         hdf.read(mesh, "/mesh", False)
         self.mesh = mesh
 
-        self.subdomains = CellFunction("size_t", mesh)
+        self.subdomains = MeshFunction("size_t", mesh, mesh.geometry().dim())
         if (hdf.has_dataset("/subdomains")):
             hdf.read(self.subdomains, "/subdomains")
         else:
             print('Subdomain file is not provided')
 
         if (hdf.has_dataset("/boundaries")):
-            self.boundary_facets = FacetFunction("size_t", mesh)
+            self.boundary_facets = MeshFunction("size_t", mesh, mesh.geometry().dim()-1)
             hdf.read(self.boundary_facets, "/boundaries")
         else:
             print('Boundary facets file is not provided, marked from boundary settings')
@@ -186,11 +201,11 @@ class SolverBase():
         if os.path.exists(subdomain_meshfile):
             self.subdomains = MeshFunction("size_t", mesh, subdomain_meshfile)
         else:
-            self.subdomains = CellFunction("size_t", mesh)
+            self.subdomains = MeshFunction("size_t", mesh, mesh.geometry().dim())
 
     def read_mesh(self, filename):
-        print(filename, type(filename))  # unicode filename NOT working, why?
-        if isinstance(filename, (unicode,)):
+        print(filename, type(filename))
+        if sys.version_info[0]<3 and isinstance(filename, (unicode,)):
             filename = filename.encode('utf-8')
         if not os.path.exists(filename):
             raise SolverError('mesh file: {} , does not exist'. format(filename))
@@ -199,7 +214,7 @@ class SolverBase():
             f = XDMFFile(mpi_comm_world(), filename)
             f.read(mesh, True)
             self.generate_boundary_facets()
-            self.subdomains = CellFunction("size_t", mesh)
+            self.subdomains = MeshFunction("size_t", mesh, mesh.geometry().dim())
             self.mesh = mesh
         elif filename[-4:] == ".xml":
             self._read_xml_mesh(filename)
@@ -225,7 +240,7 @@ class SolverBase():
             raise SolverError('only scaler or vector solver has a base method of generate_function_space()')
 
     def generate_boundary_facets(self):
-        boundary_facets = FacetFunction('size_t', self.mesh)
+        boundary_facets = MeshFunction('size_t', self.mesh, self.mesh.geometry().dim()-1)
         boundary_facets.set_all(0)
         ## boundary conditions applying
         for name, bc in self.boundary_conditions.items():
@@ -314,7 +329,7 @@ class SolverBase():
                 print(' {} is supplied, but only tuple of number and string expr of dim = len(v) are supported'.format(type(value)))
         elif isinstance(value, (numbers.Number)):
             values_0 = Constant(value)
-        elif isinstance(value, (Constant, Function)):  # CellFunction isinstance of Function???
+        elif isinstance(value, (Constant, Function)):
             values_0 = value  # leave it as it is, since they can be used in equation
         elif isinstance(value, (Expression, )): 
             # FIXME can not interpolate an expression, not necessary?
@@ -417,7 +432,7 @@ class SolverBase():
 
         #print(ts, self.current_time, t_end)
         # Transient loop also works for steady, by set `t_end = self.time_step`
-        timer_solver_all = Timer("TimerSolveAll")
+        timer_solver_all = Timer("TimerSolveAll")  # 2017.2 Ubuntu Python2 errors
         timer_solver_all.start()
         while (self.current_time < t_end):
             if ts['transient']:
@@ -434,7 +449,7 @@ class SolverBase():
 
             print("Current time = ", self.current_time, " TimerSolveAll = ", timer_solver_all.elapsed())
             pf = self.report_settings['plotting_freq']
-            if pf>0 and self.current_step % pf == 0 and (not self.is_mixed_function_space):
+            if pf>0 and self.current_step> 0 and (self.current_step % pf == 0) and (not self.is_mixed_function_space):
                 plot(up_current, title = "Value at time: " + str(self.current_time))
             # stop for steady case, or update time
             if not self.transient_settings['transient']:
