@@ -22,7 +22,8 @@
 # ***************************************************************************
 
 
-from __future__ import print_function, division, absolute_import, unicode_literals
+from __future__ import print_function, division, absolute_import
+
 
 # make python2 and python3 compatible for unicode type, basestring is not existed in Python3
 import sys

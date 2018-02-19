@@ -196,7 +196,6 @@ class ScalerEquationSolver(SolverBase):
             return F
 
         def F_convective():
-            print('solving convection by SPUG stablization')
             h = 2*Circumradius(self.mesh)  # cell size
             velocity = self.get_convective_velocity_function(self.convective_velocity)
             if self.transient_settings['transient']:
@@ -220,9 +219,12 @@ class ScalerEquationSolver(SolverBase):
                 #print(self.body_source)
                 res -= self.get_body_source()
                 F -= get_source_item()
-            # Add SUPG stabilisation terms
-            vnorm = sqrt(dot(velocity, velocity))
-            F += (h/(2.0*vnorm))*dot(velocity, grad(Tq))*res*dx
+            using_SPUG_stablization = False  # there could be error in this SPUG implementation
+            if using_SPUG_stablization:
+                # Add SUPG stabilisation terms
+                print('solving convection by SPUG stablization')
+                vnorm = sqrt(dot(velocity, velocity))
+                F += (h/(2.0*vnorm))*dot(velocity, grad(Tq))*res*dx
             return F
 
         if not hasattr(self, 'convective_velocity'):  # if velocity is not directly assigned to the solver
