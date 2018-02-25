@@ -106,6 +106,10 @@ class SolverBase():
                 self.generate_boundary_facets()
             else:
                 raise SolverError('Error: mesh must be file path or Mesh object: {}')
+            if 'fe_family' in s:
+                self.family = s['fe_family']
+            else:
+                self.family = 'CG'
             if 'fe_degree' in s:
                 self.degree = s['fe_degree']
             else:
@@ -227,16 +231,16 @@ class SolverBase():
     def generate_function_space(self, periodic_boundary):
         if "scaler_name" in self.settings:
             if periodic_boundary:
-                self.function_space = FunctionSpace(self.mesh, "CG", self.degree, constrained_domain=periodic_boundary)
+                self.function_space = FunctionSpace(self.mesh, self.family, self.degree, constrained_domain=periodic_boundary)
                 # the group and degree of the FE element.
             else:
-                self.function_space = FunctionSpace(self.mesh, "CG", self.degree)
+                self.function_space = FunctionSpace(self.mesh, self.family, self.degree)
         elif "vector_name" in self.settings:
             if periodic_boundary:
-                self.function_space = VectorFunctionSpace(self.mesh, "CG", self.degree, constrained_domain=periodic_boundary)
+                self.function_space = VectorFunctionSpace(self.mesh, self.family, self.degree, constrained_domain=periodic_boundary)
                 # the group and degree of the FE element.
             else:
-                self.function_space = VectorFunctionSpace(self.mesh, "CG", self.degree)
+                self.function_space = VectorFunctionSpace(self.mesh, self.family, self.degree)
         else:
             raise SolverError('only scaler or vector solver has a base method of generate_function_space()')
 

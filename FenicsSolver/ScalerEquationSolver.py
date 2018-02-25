@@ -104,8 +104,8 @@ class ScalerEquationSolver(SolverBase):
         return self.get_material_value(c)  # to deal with nonlinear material
 
     def get_convective_velocity_function(self, convective_velocity):
-        self.vector_space = VectorFunctionSpace(self.mesh, 'CG', self.degree+1)
-        vel = self.translate_value(convective_velocity, self.vector_space)
+        self.vector_function_space = VectorFunctionSpace(self.mesh, 'CG', self.degree+1)
+        vel = self.translate_value(convective_velocity, self.vector_function_space)
         #print('type of convective_velocity', type(convective_velocity), type(vel))
         #print("vel.ufl_shape", vel.ufl_shape)
         return vel
@@ -192,7 +192,8 @@ class ScalerEquationSolver(SolverBase):
         # poission equation, unified for all kind of variables
         def F_static(T, Tq):
             F =  inner( conductivity * grad(T), grad(Tq))*dx
-            F -= sum(integrals_N)
+            if integrals_N:
+                F -= sum(integrals_N)
             return F
 
         def F_convective():
@@ -214,7 +215,8 @@ class ScalerEquationSolver(SolverBase):
                 # Galerkin variational problem
                 F = Tq*dot(velocity, grad(T_mid))*capacity*dx + conductivity * dot(grad(Tq), grad(T_mid))*dx
 
-            F -= sum(integrals_N)  # included in F_static()
+            if integrals_N:
+                F -= sum(integrals_N)
             if self.body_source:
                 #print(self.body_source)
                 res -= self.get_body_source()
