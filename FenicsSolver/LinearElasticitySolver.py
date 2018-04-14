@@ -29,7 +29,6 @@ import numpy as np
 
 #####################################
 from dolfin import *
-from mshr import Box
 
 # Test for PETSc
 if not has_linear_algebra_backend("PETSc"):
@@ -41,41 +40,61 @@ parameters["linear_algebra_backend"] = "PETSc"
 
 from .SolverBase import SolverBase, SolverError
 class LinearElasticitySolver(SolverBase):
-    """ transient and thermal stress is implemented but not tested
-    contact boundary is not implemented,
-    placity (nonlinear elastic) will be implemented in another solver
+    """ features:
+    # transient: support very slow boundary change
+    # thermal stress are implemented but with very basic example
+    # modal analysis, not tested yet
+    # boundary conditions: see member funtion `update_boundary_conditions()`
+    # support 2D and 3D with nullspace accel
+    todo:
+    # point source, as nodal constraint,  is not supported yet
+    # contact/frictional boundary condition
+    # nonhomogenous meterial, anisotropy need rank 4 tensor, not yet tested
+    plasticity will be implemented in PlasticitySolver,
+    and other nonliearity by NonlinearElasticitySolver
     """
     def __init__(self, case_settings):
         case_settings['vector_name'] = 'displacement'
         SolverBase.__init__(self, case_settings)
 
-        # there must be a value for body force as source item, to make L not empyt in a == L
-        #todo: moved to SolverBase
+        """
+        # this code is not necessary now
         if self.body_source:
             self.body_source = self.translate_value(self.body_source)
         else:
             if self.dimension == 3:
                 self.body_source = Constant((0, 0, 0))
-            else:
+            elif self.dimension == 2:
                 self.body_source = Constant((0, 0))
+            else:
+                self.body_source = Constant(0)
+        """
 
+        # solver specific setting
         self.solving_modal = False
 
-
     def sigma(self, u):
-        # Stress computation
+        # Stress computation for linear elasticity
         elasticity = self.material['elastic_modulus']
         nu = self.material['poisson_ratio']
         mu = elasticity/(2.0*(1.0 + nu))
         lmbda = elasticity*nu/((1.0 + nu)*(1.0 - 2.0*nu))
-        return 2.0*mu*sym(grad(u)) + lmbda*tr(sym(grad(u)))*Identity(len(u))
-
+        #return 2.0*mu*sym(grad(u)) + lmbda*tr(sym(grad(u)))*Identity(len(u))  # div(u) == tr(sym(grad(u)))?
+        return 2.0*mu*sym(grad(u)) + lmbda*div(u)*Identity(len(u))
+        
     def von_Mises(self, u):
         s = self.sigma(u) - (1./3)*tr(self.sigma(u))*Identity(self.dimension)  # deviatoric stress
         von_Mises = sqrt(3./2*inner(s, s))
         
         V = FunctionSpace(self.mesh, 'P', 1)  # correct, but why using another function space
         return project(von_Mises, V)
+
+    def thermal_stress(self, T):
+        elasticity = self.material['elastic_modulus']
+        nu = self.material['poisson_ratio']
+        tec = self.material['thermal_expansion_coefficient']
+        thermal_strain = tec * ( T - Constant(self.reference_values['temperature']))
+        return elasticity/(1.0 - 2.0*nu) * thermal_strain * Identity(self.dimension)
 
     def strain_energy(self, u):
         # Strain energy or the plastic heat generation
@@ -89,13 +108,22 @@ class LinearElasticitySolver(SolverBase):
         V = self.function_space
         bcs = []
         integrals_F = []
-        mesh_normal = FacetNormal(self.mesh)  # n is predefined as normal?
+        mesh_normal = FacetNormal(self.mesh)  # n is predefined as outward as positive
+
+        if 'point_source' in self.settings and self.settings['point_source']:
+            ps = self.settings['surface_source']
+            #assume it s PointSource type, or a list of PointSource
+            bcs.append(ps)
+
+        if 'surface_source' in self.settings and self.settings['surface_source']:
+            integrals_N.append(dot(self.settings['surface_source'], v)*ds)
+
         for name, bc_settings in self.boundary_conditions.items():
             i = bc_settings['boundary_id']
             bc = self.get_boundary_variable(bc_settings)
             print(bc)
             if bc['type'] =='Dirichlet' or bc['type'] =='displacement':
-                bv = self.translate_value(bc['value'])
+                bv = bc['value']  # translate_value() is not supported
                 if isinstance(bv, (tuple, list)) and len(bv) == self.dimension:
                     axis_i=0
                     for disp in bv:
@@ -118,7 +146,7 @@ class LinearElasticitySolver(SolverBase):
                 else:
                     direction_vector = mesh_normal
                 integrals_F.append( dot(g,v)*ds(i))
-            elif bc['type'] == 'stress' or bc['type'] =='Neumann':
+            elif bc['type'] == 'stress':
                 if 'direction' in bc and bc['direction']:
                     direction_vector = bc['direction']
                 else:
@@ -126,6 +154,8 @@ class LinearElasticitySolver(SolverBase):
                 g = self.translate_value(bc['value'])
                 #FIXME: assuming all force are normal to mesh boundary
                 integrals_F.append(dot(g,v)*ds(i))
+            elif bc['type'] == 'Neumann':  # Neumann is the strain: du/dx then how to make a surface stress?
+                raise SolverError('Neumann boundary type`{}` is not supported'.format(bc['type']))
             elif bc['type'] == 'symmetry':
                 raise SolverError('symmetry boundary type`{}` is not supported'.format(bc['type']))
             else:
@@ -134,17 +164,15 @@ class LinearElasticitySolver(SolverBase):
         return bcs, integrals_F
 
     def generate_form(self, time_iter_, u, v, u_current, u_prev):
+        # todo: transient
         V = self.function_space
-        # Define variational problem
-        #u = TrialFunction(V)
-        #v = TestFunction(V)
 
         elasticity = self.material['elastic_modulus']
         nu = self.material['poisson_ratio']
         mu = elasticity/(2.0*(1.0 + nu))
         lmbda = elasticity*nu/((1.0 + nu)*(1.0 - 2.0*nu))
 
-        F = inner(self.sigma(u), grad(v))*dx
+        F = inner(self.sigma(u), sym(grad(v)))*dx
 
         ds= Measure("ds", subdomain_data=self.boundary_facets)  # if later marking updating in this ds?
         bcs, integrals_F = self.update_boundary_conditions(time_iter_, u, v, ds)
@@ -154,25 +182,16 @@ class LinearElasticitySolver(SolverBase):
         if self.body_source:
             integrals_F.append( inner(self.body_source, v)*dx )
 
-        # thermal stress, material 
-        if 'temperature_distribution' in self.settings and self.settings['temperature_distribution']:
-            self.has_thermal_stress = True
-            self.temperature_distribution = self.settings['temperature_distribution']
-            ## thermal stress not tested, todo: thermal_stress_settings = {}
+        # thermal stress
+        if not hasattr(self, 'temperature_distribution'): 
+            if 'temperature_distribution' in self.settings and self.settings['temperature_distribution']:
+                self.temperature_distribution = self.translate_value(self.settings['temperature_distribution'])
+        if hasattr(self, 'temperature_distribution') and self.temperature_distribution:
             T = self.translate_value(self.temperature_distribution)  # interpolate
-            tec = self.material['thermal_expansion_coefficient']
-            # only apply if the body is NOT freely expensible in all directions, with displacement constraint
-            # if there is one or two directions can have free expansion, poisson_ratio should be considerred
-            thermal_strain = tec * ( T - Constant(self.reference_values['temperature']))
-            if self.dimension == 3:
-                thermal_stress = inner(elasticity * thermal_strain , v)*dx
-            elif self.dimension == 2:  # assuming free expansion the third direction
-                thermal_strain = thermal_strain * (1 - self.material['poisson_ratio'])
-                thermal_stress = inner(elasticity * thermal_strain , v)*dx
-            else:
-                raise SolverError('only 3D and 2D simulation is supported')
-            # there is another case: local hotspot but not melt
-            integrals_F.append( thermal_stress )
+            stress_t = self.thermal_stress(self.settings['temperature_distribution'])
+            if stress_t:
+                F -= inner(stress_t, sym(grad(v))) * dx
+                # sym(grad(v)) == epislon(v), it does not matter for multiply identity matrix
 
         # Assemble system, applying boundary conditions and extra items
         if len(integrals_F):
@@ -190,7 +209,7 @@ class LinearElasticitySolver(SolverBase):
     def solve(self):
         u = self.solve_transient()  # defined in SolverBase
         
-        if self. solving_modal:
+        if self.solving_modal:
             self.solve_modal(F, bcs)  # test passed
 
         return u

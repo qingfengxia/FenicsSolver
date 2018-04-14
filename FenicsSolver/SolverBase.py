@@ -66,6 +66,7 @@ default_case_settings = {'solver_name': None,
                 'function_space': None, 'periodic_boundary': None, 
                 'boundary_conditions': None, 
                 'body_source': None,  # dict for different subdomains {"sub_name": {'subdomain_id': 1, 'value': 2}}
+                'surface_source': None,  # apply to all boundary
                 'initial_values': {},
                 'material':{},  # can be a list of material dict for different subdomains
                 'solver_settings': {

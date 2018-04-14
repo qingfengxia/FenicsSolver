@@ -61,12 +61,12 @@ class CoupledNavierStokesSolver(SolverBase):
         # solver_parameters
 
     def generate_function_space(self, periodic_boundary):
-        self.vel_degree = 2  # order 3 is working for 2D elbow testing
-        self.pressure_degree = self.vel_degree - 1
+        self.vel_degree = self.settings['fe_degree'] + 1  # order 3 is working for 2D elbow testing
+        self.pressure_degree = self.settings['fe_degree']
         self.is_mixed_function_space = True  # FIXME: how to detect it is mixed, if function_space is provided
 
-        V = VectorElement("CG", self.mesh.ufl_cell(), self.vel_degree)  # degree 2, must be higher than pressure
-        Q = FiniteElement("CG", self.mesh.ufl_cell(), self.pressure_degree)
+        V = VectorElement(self.settings['fe_family'], self.mesh.ufl_cell(), self.vel_degree)  # degree 2, must be higher than pressure
+        Q = FiniteElement(self.settings['fe_family'], self.mesh.ufl_cell(), self.pressure_degree)
         #T = FiniteElement("CG", self.mesh.ufl_cell(), 1)  # temperature subspace, or just use Q
         if self.solving_temperature:
             mixed_element = MixedElement([V, Q, Q])
@@ -177,7 +177,7 @@ class CoupledNavierStokesSolver(SolverBase):
             - p*div(v)*dx \
             + div(u)*q*dx
         if self.settings['body_source']: 
-            F -= inner(self.get_body_source(), v)*dx
+            F -= inner(self.get_body_source(), v)*dx  # dot() ?
         # Add convective term
         F += inner(dot(grad(u), u_0), v)*dx  # u_0 is the current value solved
         return F
@@ -187,7 +187,7 @@ class CoupledNavierStokesSolver(SolverBase):
         v, q = split(test_function)
         u_0, p_0 = split(up_0)  # up_0 not in use
         u_prev, p_prev = split(up_prev)
-        return (1 / self.get_time_step(time_iter_)) * inner(u - u_prev, v) * dx
+        return (1 / self.get_time_step(time_iter_)) * inner(u - u_prev, v) * dx  # dot() ?
 
     def update_boundary_conditions(self, time_iter_, trial_function, test_function, ds):
         W = self.function_space
@@ -295,7 +295,7 @@ class CoupledNavierStokesSolver(SolverBase):
         under_relax_ratio = 0.7
         up_temp = Function(self.function_space)  # a temporal to save value in the Picard loop
 
-        timer_solver = Timer(u"TimerSolveStatic")
+        timer_solver = Timer("TimerSolveStatic")
         timer_solver.start()
         while (iter_ < max_iter and eps > tol):
             # solve the linear stokes flow to avoid up_s = 0

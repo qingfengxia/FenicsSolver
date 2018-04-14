@@ -27,10 +27,11 @@ import numpy as np
 from dolfin import *
 from FenicsSolver import LinearElasticitySolver
 from FenicsSolver import SolverBase
+set_log_level(ERROR)
 
-def test(interactively = False):
+def test(has_thermal_stress, free_hanging, interactively = False):
 
-    xmin, xmax = 0, 8
+    xmin, xmax = 0, 10
     ymin, ymax = 0, 1
     zmin, zmax = 0, 1
     nx,ny,nz = 40, 10, 10
@@ -61,16 +62,19 @@ def test(interactively = False):
     omega = 100 # rad/s, axis, origin are other parameters
     rho = 7800 # kg/m3, density
     # body force: Loading due to centripetal acceleration (rho*omega^2*x_i) or gravity
-    bf = Expression(("rho*omega*omega*x[0]", "rho*omega*omega*x[1]", "0.0"), omega=omega, rho=rho, degree=2)
+    #bf = Expression(("rho*omega*omega*x[0]", "rho*omega*omega*x[1]", "0.0"), omega=omega, rho=rho, degree=2)
+    bf = Expression(("10*rho", "0", "0.0"), omega=omega, rho=rho, degree=2)  # gravity but in x-axis
     #
     from collections import OrderedDict
     bcs = OrderedDict()
     #
     #bcs["fixed"] = {'boundary': Left(), 'boundary_id': 1, 'type': 'Dirichlet', 'value': Constant((0,0,0))}
-    bcs["fixed"] = {'boundary': Left(), 'boundary_id': 1, 'type': 'Dirichlet', 'value': Constant((0, 0, 0))}
+    bcs["fixed"] = {'boundary': Left(), 'boundary_id': 1, 'type': 'Dirichlet', 'value': (Constant(0), None, None)}
     
-    bcs["displ"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant((0.01, 0, 0))}
-    #bcs["displ"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'Dirichlet', 'value': (Constant(0.01), None, None)}
+    if not free_hanging:
+        bcs["displ"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant((0, 0, 0))}
+    #bcs["displ"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'Dirichlet', 'value': (Constant(0), None, None)}
+    # constraint only one direction displacement
     #bcs["displ"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'Dirichlet', 'value': (None, None, Constant(0.01))}
     
     #bcs["tensile"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'stress', 'value': Constant((1e8,0, 0))}  #correct, normal stress
@@ -86,35 +90,30 @@ def test(interactively = False):
     #                            'K':  Constant(), 'fixed_position': Point(xmax,4,(zmin+xmax)*0.5))}
     # for dynamic system, damping boundary
 
-    # constraint only one direction displacement
-    # modal analysis
-
-    # edge or notal constraint is not supported yet
-    # contact: frictional
-    
-    # nonhomogenous meterial, anisotropy need rank 4 tensor
-    
-    # support 3D only for nullspace accel
 
     # Create function space
-    V = VectorFunctionSpace(mesh, "Lagrange", 1)
+    fe_degree = 2
+    V = VectorFunctionSpace(mesh, "Lagrange", fe_degree)
     #external Temperature distribution can be solved by the same function space, then pass to elastic solver
 
     import copy
     s = copy.copy(SolverBase.default_case_settings)  # deep copy? 
     s['material'] = {'name': 'steel', 'elastic_modulus': 2e11, 'poisson_ratio': 0.27, 'density': 7800, 
                                 'thermal_expansion_coefficient': 2e-6} #default to steel
-
     s['function_space'] = V
     s['boundary_conditions'] = bcs
     s['temperature_distribution']=None
     #s['vector_name'] = 'displacement'
     s['solver_settings']['reference_values'] = {'temperature':293 }  # solver specific setting
-
+    if has_thermal_stress:
+        print('test thermal stress')
+        s['temperature_distribution'] = Expression("343", degree=fe_degree)
+        #Expression("dT * x[1]/ymax", dT = 100, ymax=ymax, degree=fe_degree)
+        # need a better expression to test thermal. 
+    else:
+        s['body_source'] = bf
     solver = LinearElasticitySolver.LinearElasticitySolver(s)  # body force test passed
-    #solver.temperature_distribution = Expression("dT * x[1]/ymax", dT = 100, ymax=ymax, degree=1)
-    #solver.reference_temperature=293
-    # specify temperature_gradient, to avoid error from  function space to vector function space project
+
     '''
     X0 = FunctionSpace(mesh, "RT", 2)
     X = VectorFunctionSpace(mesh, "RT", 2)
@@ -125,7 +124,7 @@ def test(interactively = False):
     u = solver.solve()
 
     ## Plot solution of displacement
-    plot(u)
+    plot(u, title='displacement')
     # Plot stress
 
     plot(solver.von_Mises(u), title='Stress von Mises')
@@ -150,4 +149,7 @@ def test(interactively = False):
     #####################################
 
 if __name__ == '__main__':
-    test()
+    test(has_thermal_stress = True, free_hanging=True)
+    test(has_thermal_stress = False, free_hanging=True, interactively = True)
+    test(has_thermal_stress = True, free_hanging=False)
+    test(has_thermal_stress = False, free_hanging=False, interactively = True)
