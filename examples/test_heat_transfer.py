@@ -26,7 +26,7 @@ import numpy as np
 
 from dolfin import *
 
-from FenicsSolver.ScalerEquationSolver  import ScalerEquationSolver
+from FenicsSolver.ScalerTransportSolver  import ScalerTransportSolver
 
 #mesh = UnitCubeMesh(20, 20, 20)
 mesh = UnitSquareMesh(40, 40)
@@ -154,14 +154,11 @@ def setup(using_anisotropic_conductivity, using_convective_velocity, using_DG_so
                     } }
 
     if using_convective_velocity:
-        settings['convective_velocity'] =  Constant((0.5, -0.5))
+        settings['convective_velocity'] =  Constant((0.005, -0.005))
     else:
         settings['convective_velocity'] = None
-    if using_DG_solver:
-        from Fenics.ScalerEquationDGSolver import ScalerEquationDGSolver
-        solver = ScalerEquationDGSolver(settings)
-    else:
-        solver = ScalerEquationSolver(settings)
+
+    solver = ScalerTransportSolver(settings)
 
     solver.material['conductivity'] = K
     #debugging: show boundary selection
@@ -201,7 +198,7 @@ def test_radiation(interactively):
     bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'values': {
                     'temperature': {'variable': 'temperature', 'type': 'Dirichlet', 'value': Constant(T_cold)}
                  } }
-    settings['radiation_settings'] = {'ambient_temperature': T_ambient-20, 'emissivity': 0.9}
+    #settings['radiation_settings'] = {'ambient_temperature': T_ambient-20, 'emissivity': 0.9}
     settings['convective_velocity'] = None
     solver = ScalerEquationSolver(settings)
     solver.material['conductivity'] = K
@@ -210,12 +207,12 @@ def test_radiation(interactively):
     T = solver.solve()
     post_process(T, interactively)
 
-def test(interactively = False):
-    #test(using_anisotropic_conductivity = True, using_convective_velocity = False, using_DG_solver = False, using_HTC = False, interactively=interactively)
-    setup(using_anisotropic_conductivity = False, using_convective_velocity = False, using_DG_solver = False, using_HTC = True, interactively = interactively)
- 
-    #setup(using_anisotropic_conductivity = False, using_convective_velocity = True, using_DG_solver = True, using_HTC = True, interactively = interactively)
-    #test_radiation(False)
+def test(interactively = True):
+    #setup(using_anisotropic_conductivity = True, using_convective_velocity = False, using_DG_solver = False, using_HTC = False, interactively=interactively)
+    #setup(using_anisotropic_conductivity = False, using_convective_velocity = False, using_DG_solver = False, using_HTC = True, interactively = interactively)
+    #DG is not test here
+    setup(using_anisotropic_conductivity = False, using_convective_velocity = True, using_DG_solver = True, using_HTC = True, interactively = interactively)
+    #test_radiation(True)
 
 if __name__ == '__main__':
     test()

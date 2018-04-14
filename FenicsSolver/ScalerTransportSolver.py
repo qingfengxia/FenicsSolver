@@ -28,7 +28,7 @@ import numpy as np
 
 from dolfin import *
 
-supported_scaler_equations = {'temperature', 'electric_potential', 'species_concentration'}
+supported_scalers = {'temperature', 'electric_potential', 'species_concentration'}
 # For small species factor, diffusivity = primary species, such as dye in water, always with convective velocity
 # electric_potential, only for dieletric material electrostatics (permittivity/conductivity << 1)
 # magnetic_potential is a vector, magnetostatics (static current) is solved in MaxwellEMSolver (permittivity/conductivity >> 1)
@@ -38,16 +38,17 @@ supported_scaler_equations = {'temperature', 'electric_potential', 'species_conc
 # thermal volumetric capacity = density * specific heat
 
 from .SolverBase import SolverBase, SolverError
-class ScalerEquationSolver(SolverBase):
-    """  this is a general scaler solver, modelled after Heat Transfer Equation, other solver can derive from this basic one
-    # 4 types of boundaries supported:
-    # body source unit:  W/m^3
-    # convective velocity: m/s, 
+class ScalerTransportSolver(SolverBase):
+    """  general scaler transportation (diffusion and advection) solver, exampled by Heat Transfer
+    # 4 types of boundaries supported: math, physical 
+    # body source unit:  W/m^3, apply to whole body/domain
+    # surface source unit: W/m^2, apply to whole boundary,  
+    # convective velocity: m/s, stablization is controlled by advection_settings
     # Thermal Conductivity:  w/(K m)
     # Specific Heat Capacity, Cp:  J/(kg K)
     # thermal specific:
     # shear_heating: common in lubrication scinario, high viscosity and high shear speed, one kind of volume/body source
-    # radiation: 
+    # radiation:  radiation_settings {}
     """
     def __init__(self, s):
         SolverBase.__init__(self, s)
@@ -56,7 +57,7 @@ class ScalerEquationSolver(SolverBase):
             self.scaler_name = self.settings['scaler_name'].lower()
         else:
             self.scaler_name = "temperature"
-        self.using_diffusion_form = False
+        self.using_diffusion_form = False  # diffusion form is simple in math, but not easy to deal with nonlinear material property
 
         if self.scaler_name == "eletric_potential":
             assert self.settings['transient_settings']['transient'] == False
@@ -66,11 +67,11 @@ class ScalerEquationSolver(SolverBase):
         # to calc diffusion coeff : conductivity/capacity, it must be number only
         if 'capacity' in self.material:
             c = self.material['capacity']
-        # if not found, calc it
+        # if not found, calc it, otherwise, it is 
         if self.scaler_name == "temperature":
             c = self.material['density'] * self.material['specific_heat_capacity']
         elif self.scaler_name == "electric_potential":
-            c = 1  # depends on source and boundary flux physical value
+            c = 8.854187817e-12  # electric_permittivity_in_vacumm
         elif self.scaler_name == "spicies_concentration":
             c = 1
         else:
@@ -83,7 +84,7 @@ class ScalerEquationSolver(SolverBase):
         elif self.scaler_name == "temperature":
             c = self.material['thermal_conductivity'] / self.capacity()
         elif self.scaler_name == "electric_potential":
-            c = self.material['electric_permittivity']
+            c = self.material['relative_electric_permittivity']
         elif self.scaler_name == "spicies_concentration":
             c = self.material['diffusivity']
         else:
@@ -114,7 +115,14 @@ class ScalerEquationSolver(SolverBase):
         capacity = self.capacity() # constant, experssion or tensor
 
         bcs = []
-        integrals_N = []  # heat flux
+        integrals_N = []
+        if 'point_source' in self.settings and self.settings['point_source']:
+            ps = self.settings['surface_source']
+            #assume it s PointSource type, or a list of PointSource
+            bcs.append(ps)
+        if 'surface_source' in self.settings and self.settings['surface_source']:
+            integrals_N.append(dot(self.settings['surface_source'], Tq)*ds)
+
         for name, bc_settings in self.boundary_conditions.items():
             i = bc_settings['boundary_id']
             bc = self.get_boundary_variable(bc_settings)
@@ -173,9 +181,8 @@ class ScalerEquationSolver(SolverBase):
         #print(conductivity, capacity, diffusivity)
 
         bcs, integrals_N = self.update_boundary_conditions(time_iter_, T, Tq, ds)
-        # boundary type is defined in FreeCAD FemConstraintFluidBoundary and its TaskPanel
 
-        def get_source_item():
+        def body_source_item():
             if isinstance(self.body_source, dict):
                 S = []
                 for k,v in self.body_source.items():
@@ -194,9 +201,15 @@ class ScalerEquationSolver(SolverBase):
             F =  inner( conductivity * grad(T), grad(Tq))*dx
             if integrals_N:
                 F -= sum(integrals_N)
+            # body source is dealt in later section
             return F
 
         def F_convective():
+            if 'advection_settings' in self.settings:
+                ads = self.settings['advection_settings']  # a very big panelty factor can stabalize, but leading to diffusion error
+            else:
+                ads = {'stabilization_method': None}  # default no, 
+
             h = 2*Circumradius(self.mesh)  # cell size
             velocity = self.get_convective_velocity_function(self.convective_velocity)
             if self.transient_settings['transient']:
@@ -209,7 +222,7 @@ class ScalerEquationSolver(SolverBase):
                 F = ((T - T_prev)/dt+ dot(velocity, grad(T_mid)))*capacity*dx*Tq + conductivity * dot(grad(Tq), grad(T_mid))*dx
             else:
                 T_mid = T
-                # Residual
+                # Residual, why the sign is minus for diffusion item???
                 res = dot(velocity, grad(T_mid))*capacity - conductivity * div(grad(T_mid))   # does not support tensor conductivity
                 #print(res)
                 # Galerkin variational problem
@@ -220,21 +233,31 @@ class ScalerEquationSolver(SolverBase):
             if self.body_source:
                 #print(self.body_source)
                 res -= self.get_body_source()
-                F -= get_source_item()
-            using_SPUG_stablization = False  # there could be error in this SPUG implementation
-            if using_SPUG_stablization:
+                F -= body_source_item()
+
+            using_mass_conservation = False  # not well tested, 
+            if using_mass_conservation:
+                print('mass conservation compensation on boundary')
+                sigma = Constant(2) # penalty parameter
+                #he = self.mesh.ufl_cell().max_facet_edge_length
+                F += (1.0/ h**sigma) * inner(dot(velocity, normal), T)*capacity*Tq*ds
+                #F -= dot(dot(velocity, normal), T)*capacity*ds
+
+            # there could be a error in this SPUG implementation, 
+            if ads['stabilization_method'] == 'SPUG':
                 # Add SUPG stabilisation terms
                 print('solving convection by SPUG stablization')
                 vnorm = sqrt(dot(velocity, velocity))
                 F += (h/(2.0*vnorm))*dot(velocity, grad(Tq))*res*dx
+            # other stablisation_methods are not implemented
             return F
 
+        # detection here, to deal with assigned velocity after solver intialization
         if not hasattr(self, 'convective_velocity'):  # if velocity is not directly assigned to the solver
             if 'convective_velocity' in self.settings and self.settings['convective_velocity']:
                 self.convective_velocity = self.settings['convective_velocity']
             else:
                 self.convective_velocity = None
-
         if self.convective_velocity:  # convective heat conduction
             F = F_convective()
         else:
@@ -246,9 +269,10 @@ class ScalerEquationSolver(SolverBase):
                        + theta*F_static(T, Tq) + (1.0-theta)*F_static(T_prev, Tq)  # FIXME:  check using T_0 or T_prev ? 
             else:
                 F = F_static(T, Tq)
-            #print(F, get_source_item())
+            #print(F, body_source_item())
             if self.body_source:
-                F -= get_source_item() 
+                F -= body_source_item()
+
         #print(F)
         if self.scaler_name == "temperature":
             if ('radiation_settings' in self.settings and self.settings['radiation_settings']):

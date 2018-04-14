@@ -30,18 +30,18 @@ import numpy as np
 
 from dolfin import *
 
-supported_scaler_equations = {'temperature', 'electric_potential', 'species_concentration'}
+supported_scalers = {'temperature', 'electric_potential', 'species_concentration'}
 
 
-from .ScalerEquationSolver import ScalerEquationSolver
+from .ScalerTransportSolver import ScalerTransportSolver
 from .SolverBase import SolverBase, SolverError
-class ScalerEquationDGSolver(ScalerEquationSolver):
+class ScalerTransportDGSolver(ScalerTransportSolver):
     """ share code as much as possible withe the CG version, 
     adapted from official tutorial:  2D, no source, no Neumann boundary
     https://github.com/FEniCS/dolfin/tree/master/demo/undocumented/dg-advection-diffusion
     """
     def __init__(self, s):
-        ScalerEquationSolver.__init__(self, s)
+        ScalerTransportSolver.__init__(self, s)
         self.using_diffusion_form = True
 
     def generate_function_space(self, periodic_boundary):
@@ -69,7 +69,10 @@ class ScalerEquationDGSolver(ScalerEquationSolver):
         h = CellSize(self.mesh)  # cell size
         h_avg = (h('+') + h('-'))/2
         # Penalty term
-        alpha = Constant(5.0)
+        if self.dimension == 2:
+            alpha = Constant(5.0)  # default 5 for 2D, but it needs to be higher for 3D case
+        else:
+            alpha = Constant(500)
 
         dx= Measure("dx", subdomain_data=self.subdomains)  # 
         ds= Measure("ds", subdomain_data=self.boundary_facets)
@@ -77,6 +80,7 @@ class ScalerEquationDGSolver(ScalerEquationSolver):
         conductivity = self.conductivity() # constant, experssion or tensor
         capacity = self.capacity()  # density * specific capacity -> volumetrical capacity
         diffusivity = self.diffusivity()  # diffusivity
+        #print(conductivity, capacity, diffusivity)
 
         bcs, integrals_N = self.update_boundary_conditions(time_iter_, T, Tq, ds)
 
@@ -109,22 +113,27 @@ class ScalerEquationDGSolver(ScalerEquationSolver):
 
                 a_vel = dot(jump(v), vel_n('+')*phi('+') - vel_n('-')*phi('-') )*dS  + dot(v, vel_n*phi)*ds
 
-                F = a_int + a_fac + a_vel
+                F = (a_int + a_fac + a_vel) * Constant(capacity)
                 if integrals_N:
                     print("integrals_N", integrals_N)
-                    F -= sum(integrals_N)  #DG may need distinct newmann boundary flux
+                    F -= sum(integrals_N)  # FIXME: DG may need distinct newmann boundary flux
                 # Linear form
                 if self.body_source:
                     F -= v * self.body_source * dx
-            #return F
             return F
+
+        if not hasattr(self, 'convective_velocity'):  # if velocity is not directly assigned to the solver
+            if 'convective_velocity' in self.settings and self.settings['convective_velocity']:
+                self.convective_velocity = self.settings['convective_velocity']
+            else:
+                self.convective_velocity = None
 
         if self.convective_velocity:  # convective heat conduction
             F = F_convective()
+            print('Discrete Galerkin method only solver advection-diffusion scaler equation')
         else:
             F = F_static(T, Tq)
-            print('Discrete Galerkin method only solver advection-diffusion scaler equation, \
-            use CG for diffusion only equation')
+            print('Discrete Galerkin method only solver diffusion only scaler equation')
 
         return F, bcs
 

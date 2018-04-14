@@ -26,8 +26,7 @@ import numpy as np
 
 from dolfin import *
 
-from FenicsSolver import ScalerEquationSolver
-from ScalerEquationSolver import ScalerEquationSolver
+from FenicsSolver.ScalerTransportSolver import ScalerTransportSolver
 
 #mesh = UnitCubeMesh(20, 20, 20)
 mesh = UnitSquareMesh(40, 40)
@@ -44,7 +43,12 @@ V_high = 360
 V_low = 300
 V_ground = 300
 resistivity = 2300 # ohm.m
-#conductivity = 1.0/resistivity
+# source item: unit:  C/m3
+# flux boundary condition (surface charge):    C/m2
+# Neumann boundary, unit  V/m
+# PointSource  (Dirac delta function) is supported,  uint?   
+# API: PointSource(V, p, magnitude=1.0),  Create point source at given coordinates point of given magnitude
+
 
 #polarity is not considered by this solver
 
@@ -56,7 +60,7 @@ K_anisotropic = Expression((('exp(x[0])','sin(x[1])'), ('sin(x[0])','tan(x[1])')
 material = {'name': "silicon", 'thermal_conductivity': 149, 'specific_heat_capacity': 1000, \
                     'density': 2500, 'sound_speed': 8433, 'Poisson_ratio': 0.2, 'elastic_modulus': 1.5e11, \
                     'magnetic_permeability': magnetic_permeability_0*1, \
-                    'electric_permittivity': electric_permittivity_0*11.7, 'electric_conductivity': 1.0/resistivity}  # Tref set in reference_values
+                    'relative_electric_permittivity': 11.7, 'electric_conductivity': 1.0/resistivity}  # Tref set in reference_values
 
 
 length = cy_max - cy_min
@@ -104,7 +108,7 @@ def test(interactively = False):
         settings['convective_velocity'] =  Constant((0.5, -0.5))
     else:
         settings['convective_velocity'] = None
-    solver = ScalerEquationSolver(settings)
+    solver = ScalerTransportSolver(settings)
     #debugging: show boundary selection
     plot(solver.boundary_facets, "boundary facets colored by ID")
     plot(solver.subdomains, "subdomain cells colored by ID")
