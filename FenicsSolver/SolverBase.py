@@ -64,10 +64,10 @@ default_case_settings = {'solver_name': None,
                 'case_name': 'test', 'case_folder': "./",  'case_file': None,
                 'mesh':  None, 'fe_degree': 1, 'fe_family': "CG",
                 'function_space': None, 'periodic_boundary': None, 
-                'boundary_conditions': None, 
+                'boundary_conditions': None, # OrderedDict
                 'body_source': None,  # dict for different subdomains {"sub_name": {'subdomain_id': 1, 'value': 2}}
-                'surface_source': None,  # apply to all boundary
-                'initial_values': {},
+                'surface_source': None,  # apply to all boundary,  {'value': 100, 'direction': Constant(1,0,0)} without direction mean normal
+                'initial_values': {},  # dict with key as scaler or vector name
                 'material':{},  # can be a list of material dict for different subdomains
                 'solver_settings': {
                     'transient_settings': {'transient': False, 'starting_time': 0, 'time_step': 0.01, 'ending_time': 0.03},
@@ -98,7 +98,6 @@ class SolverBase():
     def load_settings(self, s):
         ## mesh and boundary
         self.boundary_conditions = s['boundary_conditions']
-
         if ('mesh' in s) and s['mesh']:
             if isinstance(s['mesh'], (str, unicode)):
                 self.read_mesh(s['mesh'])  # it also read boundary
@@ -123,10 +122,11 @@ class SolverBase():
             self.degree = self.function_space._ufl_element.degree()
             self.mesh = self.function_space.mesh()
             self.generate_boundary_facets()
+            self.is_mixed_function_space = False
         else:
             raise SolverError('mesh or function space must specified to construct solver object')
         self.dimension = self.mesh.geometry().dim()
-        self.is_mixed_function_space = False  # todo: how to detect it is mixed?
+
         if not hasattr(self, 'subdomains'):
             self.subdomains = MeshFunction("size_t", self.mesh, self.dimension)
 
@@ -137,7 +137,10 @@ class SolverBase():
             self.body_source = None
 
         ## initial and reference values
-        self.initial_values = s['initial_values']
+        if 'initial_values' in s:
+            self.initial_values = s['initial_values']
+        else:
+            self.initial_values = {}
         self.reference_values = s['solver_settings']['reference_values']
         
         ## material
@@ -230,6 +233,7 @@ class SolverBase():
             raise SolverError('mesh or function space must specified to construct solver object')
 
     def generate_function_space(self, periodic_boundary):
+        self.is_mixed_function_space = False  # todo: how to detect it is mixed?
         if "scaler_name" in self.settings:
             if periodic_boundary:
                 self.function_space = FunctionSpace(self.mesh, self.family, self.degree, constrained_domain=periodic_boundary)
@@ -254,22 +258,27 @@ class SolverBase():
         self.boundary_facets = boundary_facets
 
     def get_initial_field(self):
-        # must return Function, currently only support 
+        # must return Function, currently only support single scaler or vector
         if not self.initial_values:
             #if isinstance(self.function_space, (VectorFunctionSpace,)):
-            if 'vector_name' in self.settings:
+            if self.is_mixed_function_space:
+                return Function(self.function_space)  # it is not default to zero
+            elif 'vector_name' in self.settings:
                 v0 = (0, 0, 0)[:self.dimension]
             elif 'scaler_name' in self.settings:
                 v0 = 0
             else:
                 raise SolverError('only vector and scaler equation can run this method')
         else:
-            if 'vector_name' in self.settings:
+            if self.is_mixed_function_space:
+                raise SolverError('only vector and scaler function can run this method')
+            elif 'vector_name' in self.settings:
                 v0 = self.initial_values[self.settings['vector_name']]
             elif 'scaler_name' in self.settings:
                 v0 = self.initial_values[self.settings['scaler_name']]
             else:
                 raise SolverError('only vector and scaler function can run this method')
+
         if 'vector_name' in self.settings and isinstance(v0[0], (str, numbers.Number)):
             _initial_values_expr = Expression( tuple([str(v) for v in v0]), degree = self.degree)
             u0 = interpolate(_initial_values_expr, self.function_space)
@@ -299,9 +308,6 @@ class SolverBase():
         # TODO: nonlinear, function/expression of temperature, or any variable
         else:  # linear homogenous material, str, Expression, numbers.Number, Constant, Callable
             return value # self.translate_value(value)
-            
-    def get_body_source(self):
-        return self.body_source
 
     def _translate_dict_value(self, value):
         """ body source, initial value or material for multiple subdomains 
@@ -341,7 +347,7 @@ class SolverBase():
             # FIXME can not interpolate an expression, not necessary?
             values_0 = value  # interpolate(value, W)
         elif callable(value) and self.transient_settings['transient']:  # Function is also callable
-            values_0 = value(self.current_time)
+            values_0 = Constant(value(self.current_time))
         elif isinstance(value, (str, )):  # file or string expression
             if os.path.exists(value):
                 # also possible continue from existent solution, or interpolate from diff mesh density
@@ -418,14 +424,20 @@ class SolverBase():
                 print('time point can only be a sequence of time series or derived from constant time step')
         return tp
 
+    def solve_current_step(self, trial_function, test_function, up_current, up_prev):
+        # only NS equation needs current value to build form
+        F, Dirichlet_bcs_up = self.generate_form(self.current_step, trial_function, test_function, up_current, up_prev)
+        up_prev.assign(up_current)
+        up_current = self.solve_form(F, up_current, Dirichlet_bcs_up)  # solve for each time step, up_prev tis not needed
+
     def solve_transient(self):
         #
         trial_function = TrialFunction(self.function_space)
         test_function = TestFunction(self.function_space)
         # Define functions for transient loop
-        up_current = self.get_initial_field()  # init to default or user provided constant
-        up_prev = Function(self.function_space)
-        up_prev.assign(up_current)
+        u_current = self.get_initial_field()  # init to default or user provided constant
+        u_prev = Function(self.function_space)
+        u_prev.assign(u_current)
         ts = self.transient_settings
 
         # Define a parameters for a stationary loop
@@ -447,11 +459,7 @@ class SolverBase():
                 dt = 1
 
             ## overloaded by derived classes, maybe move out of temporal loop if boundary does not change form
-            # only NS equation needs current value to build form
-            F, Dirichlet_bcs_up = self.generate_form(self.current_step, trial_function, test_function, up_current, up_prev)
-
-            up_prev.assign(up_current)  #
-            up_current = self.solve_static(F, up_current, Dirichlet_bcs_up)  # solve for each time step, up_prev tis not needed
+            self.solve_current_step(trial_function, test_function, u_current, u_prev)
 
             print("Current time = ", self.current_time, " TimerSolveAll = ", timer_solver_all.elapsed())
             pf = self.report_settings['plotting_freq']
@@ -466,10 +474,10 @@ class SolverBase():
         timer_solver_all.stop()
 
         if 'saved_filename' in self.report_settings and self.report_settings['saved_filename']:
-            result_file = File(self.report_settings['saved_filename'])
+            result_file = File(self.report_settings['saved_filename'])  #XDMFFile is preferred for parallel IO
             result_file << up_current
 
-        return up_current
+        return u_current
 
     def solve(self):
         self.result = self.solve_transient()

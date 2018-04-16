@@ -41,12 +41,13 @@ parameters["linear_algebra_backend"] = "PETSc"
 from .SolverBase import SolverBase, SolverError
 class LinearElasticitySolver(SolverBase):
     """ features:
-    # transient: support very slow boundary change
+    # transient: support very slow boundary change, Elastostatics
     # thermal stress are implemented but with very basic example
     # modal analysis, not tested yet
     # boundary conditions: see member funtion `update_boundary_conditions()`
     # support 2D and 3D with nullspace accel
     todo:
+    # Elastodynamics - the wave equation
     # point source, as nodal constraint,  is not supported yet
     # contact/frictional boundary condition
     # nonhomogenous meterial, anisotropy need rank 4 tensor, not yet tested
@@ -104,10 +105,14 @@ class LinearElasticitySolver(SolverBase):
         lmbda = elasticity*nu/((1.0 + nu)*(1.0 - 2.0*nu))
         return lmbda/2.0*(tr(eps(v)))^2 + mu*tr(eps(v)**2)
 
+    def get_flux(u, mag_vector): 
+        # to be overloaded in large deformation solver
+        return mag_vector
+
     def update_boundary_conditions(self, time_iter_, u, v, ds):
         V = self.function_space
         bcs = []
-        integrals_F = []
+        integrals_N = []
         mesh_normal = FacetNormal(self.mesh)  # n is predefined as outward as positive
 
         if 'point_source' in self.settings and self.settings['point_source']:
@@ -116,7 +121,11 @@ class LinearElasticitySolver(SolverBase):
             bcs.append(ps)
 
         if 'surface_source' in self.settings and self.settings['surface_source']:
-            integrals_N.append(dot(self.settings['surface_source'], v)*ds)
+            gS = self.get_flux(self.settings['surface_source']['value'])
+            if 'direction' in self.settings['surface_source'] and self.settings['surface_source']['direction']:
+                direction_vector = self.settings['surface_source']['direction']
+            else:
+                integrals_N.append(dot(mesh_normal*gS, v)*ds)
 
         for name, bc_settings in self.boundary_conditions.items():
             i = bc_settings['boundary_id']
@@ -145,15 +154,15 @@ class LinearElasticitySolver(SolverBase):
                     direction_vector = bc['direction']
                 else:
                     direction_vector = mesh_normal
-                integrals_F.append( dot(g,v)*ds(i))
-            elif bc['type'] == 'stress':
+                integrals_N.append(dot(self.get_flux(u, direction_vector*g), v)*ds(i))
+            elif bc['type'] == 'stress':  # normal to boundary surface, or by a given direction vector
                 if 'direction' in bc and bc['direction']:
                     direction_vector = bc['direction']
                 else:
-                    direction_vector = mesh_normal  # normal to boundary surface, n is predefined
-                g = self.translate_value(bc['value'])
+                    direction_vector = mesh_normal  
+                g = direction_vector * self.translate_value(bc['value'])
                 #FIXME: assuming all force are normal to mesh boundary
-                integrals_F.append(dot(g,v)*ds(i))
+                integrals_N.append(dot(self.get_flux(u, g),v)*ds(i))
             elif bc['type'] == 'Neumann':  # Neumann is the strain: du/dx then how to make a surface stress?
                 raise SolverError('Neumann boundary type`{}` is not supported'.format(bc['type']))
             elif bc['type'] == 'symmetry':
@@ -161,7 +170,7 @@ class LinearElasticitySolver(SolverBase):
             else:
                 raise SolverError('boundary type`{}` is not supported'.format(bc['type']))
         ## nodal constraint is not yet supported, try make it a small surface load instead
-        return bcs, integrals_F
+        return bcs, integrals_N
 
     def generate_form(self, time_iter_, u, v, u_current, u_prev):
         # todo: transient
@@ -172,7 +181,7 @@ class LinearElasticitySolver(SolverBase):
         mu = elasticity/(2.0*(1.0 + nu))
         lmbda = elasticity*nu/((1.0 + nu)*(1.0 - 2.0*nu))
 
-        F = inner(self.sigma(u), sym(grad(v)))*dx
+        F = inner(self.sigma(u), grad(v))*dx
 
         ds= Measure("ds", subdomain_data=self.boundary_facets)  # if later marking updating in this ds?
         bcs, integrals_F = self.update_boundary_conditions(time_iter_, u, v, ds)
@@ -190,7 +199,7 @@ class LinearElasticitySolver(SolverBase):
             T = self.translate_value(self.temperature_distribution)  # interpolate
             stress_t = self.thermal_stress(self.settings['temperature_distribution'])
             if stress_t:
-                F -= inner(stress_t, sym(grad(v))) * dx
+                F -= inner(stress_t, grad(v)) * dx
                 # sym(grad(v)) == epislon(v), it does not matter for multiply identity matrix
 
         # Assemble system, applying boundary conditions and extra items
@@ -199,7 +208,7 @@ class LinearElasticitySolver(SolverBase):
 
         return F, bcs
 
-    def solve_static(self, F, u_, bcs):
+    def solve_form(self, F, u_, bcs):
         #if self.is_iterative_solver:
         #u_ = self.solve_iteratively(F, bcs, u)
         u_ = self.solve_amg(F, u_, bcs)
