@@ -35,11 +35,13 @@ p_inlet = 1.1e5
 p_outlet = 1e5
 
 print("print dolfin.dolfin_version()", dolfin.dolfin_version())
+length_scale = 1
+max_vel=10 * length_scale
 
 def setup(using_elbow = True, using_3D = False, compressible=False):
     from mshr import Box, Rectangle, generate_mesh
+    zero_vel = Constant((0,0))
     if using_elbow:
-        length_scale = 0.001
         x_min, x_max = 0 * length_scale, 2*length_scale
         y_min, y_max = 0 * length_scale, 2*length_scale
         x_mid, y_mid = 1*length_scale, 1*length_scale
@@ -55,15 +57,14 @@ def setup(using_elbow = True, using_3D = False, compressible=False):
             dim = 2
             elbow = Rectangle(Point(x_min, y_min), Point(x_mid,y_max)) + Rectangle(Point(x_mid, y_mid), Point(x_max, y_max))
             mesh = generate_mesh(elbow, 20)
-            zero_vel = Constant((0,0))
 
         static_boundary = AutoSubDomain(lambda x, on_boundary: on_boundary \
             and (near(x[0], x_min) or near(x[1], y_max) or near(x[0], x_mid) or near(x[1], y_mid)))
         bottom = AutoSubDomain(lambda x, on_boundary: on_boundary and near(x[1], y_min) )
         outlet = AutoSubDomain(lambda x, on_boundary: on_boundary and near(x[0], x_max))
     else:
-        length_scale = 1
-        mesh = UnitSquareMesh(40, 100)
+        #length_scale = 1
+        mesh = UnitSquareMesh(20, 50)
         static_boundary = AutoSubDomain(lambda x, on_boundary: on_boundary and (near(x[0], 0) or near(x[0], 1)))
 
         bottom = AutoSubDomain(lambda x, on_boundary: on_boundary and near(x[1], 0) )
@@ -88,7 +89,6 @@ def setup(using_elbow = True, using_3D = False, compressible=False):
                                                     {'variable': "temperature",'type': 'Dirichlet', 'value': T_ambient}     ]}
 
     #inlet_vel_expr = Expression('max_vel * (1.0 - pow(abs(x[0]-x_mid)/x_mid, 2))', max_vel=10, x_mid=0.5)
-    max_vel=10 * length_scale
     x_c=0.5 * length_scale
     if using_3D:
         _init_vel = (0, max_vel*0.2, 0)
@@ -134,9 +134,9 @@ def setup(using_elbow = True, using_3D = False, compressible=False):
 
     return s
 
-def test_compressible(is_interactive = False):
+def test_compressible():
     s = setup(using_elbow = True, using_3D = True, compressible = True)
-    fluid = {'name': 'ideal gas', 'kinematic_viscosity': 1e8, 'density': 1.3}
+    fluid = {'name': 'ideal gas', 'kinematic_viscosity': 1e-2, 'density': 1.3}
     s['material'] = fluid
 
     from FenicsSolver import CompressibleNSSolver
@@ -146,16 +146,20 @@ def test_compressible(is_interactive = False):
     plot(u)
     plot(p)
 
-    if is_interactive:
-        interactive()
 
-def test_incompressible(is_interactive=False):
-    s = setup(using_elbow = True, using_3D = False, compressible = False)
+def test_incompressible(using_elbow = True):
+    s = setup(using_elbow, using_3D = False, compressible = False)
     solving_energy_equation = False
 
-    # for enclosured place, no need to set pressure?
-    fluid = {'name': 'oil', 'kinematic_viscosity': 1e3, 'density': 800}
+    if using_elbow:
+        Re = 1e-3  # see pressure change
+    else:
+        Re = 10  # mesh is good enough to simulate higher Re
+
+    fluid = {'name': 'oil', 'kinematic_viscosity': (length_scale * max_vel)/Re, 'density': 800}
     s['material'] = fluid
+    s['advection_settings'] = {'Re': Re, 'stabilization_method': 'G2' , 'kappa1': 4, 'kappa2': 2}
+    print("Reynolds number = ", Re)
 
     from FenicsSolver import CoupledNavierStokesSolver
     solver = CoupledNavierStokesSolver.CoupledNavierStokesSolver(s)  # set a very large viscosity for the large inlet width
@@ -175,11 +179,13 @@ def test_incompressible(is_interactive=False):
         selver_T.convective_velocity = cvel
         T = solver_T.solve()
 
-    if is_interactive:
-        interactive()
 
 if __name__ == '__main__':
     test_incompressible()
+    test_incompressible(False)
+    is_interactive = True
+    if is_interactive:
+        interactive()
     # manually call test function,  if discovered by google test, it will not plot in interactive mode
     #test_incompressible(False, True)  # Elbow 3D is slow but possible
     #test_compressible(True, True)

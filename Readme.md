@@ -15,18 +15,20 @@ LGPL licensed as [FreeCAD]<https://github.com/FreeCAD/FreeCAD> and [fenics-proje
 A set of multi-physics FEM solvers based on Fenics with GUI support(via integration Fenics into FreeCAD FemWorkbench and CfdWorkbench), focusing on nonlinear problem and mutlti-solver coupling.It functions like COMSOL or Moose, but it is free and it is made of Python.
 
 + Solvers implemented:
-  ScalerTransport (heat transfer, mass transfer, electric potential, etc)
-  Navier Stokes laminar flow, 
-  linear, nonlinear (hyperelastic) elasticity, large deformation, plasticity
+  - ScalerTransport (heat transfer, mass transfer, electric potential, etc)
+  - Navier Stokes incompressible laminar flow, 
+  - linear elasticity, nonlinear (hyperelastic) elasticity, large deformation, plasticity
 
 + Solvers under development:
-  scaler transport using DG
-  viscoelastic
-  compressible laminar flow, 
-  Maxwell electromagnetics
-  drift-diffusion (plasma and semiconductor)
-  wave propagation
-  flow-structure interaction
+  - scaler transport using DG
+  - viscoelastic
+  - Navier Stokes compressible laminar flow, 
+  - Maxwell electromagnetics
+  - drift-diffusion (plasma and semiconductor)
+  - wave propagation
+
++ coupling of above solvers
+  - flow-structure interaction
 
 + Coupling to external solvers: turbulent flow and multiphase flow will be implemented by coupled to external CFD solver, OpenFOAM.
 
@@ -56,7 +58,7 @@ Run the python script files with "test_" suffix, which are gtest compatible.
 
 ## Roadmap and progress
 
-see also my presentation at Fenics 18: [Automated Mechanical Engineering Design using Open Source CAE Software Packages](doc/Fenics18 PPT qingfeng Xia automated CAE.pdf)
+see also my presentation at Fenics 18: ![Automated Mechanical Engineering Design using Open Source CAE Software Packages](doc/Fenics18 PPT qingfeng Xia automated CAE.pdf)
 
 ### 1. Initial demonstration (Sep 2017)
 

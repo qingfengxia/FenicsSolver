@@ -34,14 +34,14 @@ from dolfin import *
 
 """
 TODO:
-1. temperature
-2. boundary translation
+1. temperature induced natural convection
+2. 
 3. test parallel by MPI
 """
 
 from .SolverBase import SolverBase
 class CoupledNavierStokesSolver(SolverBase):
-    """  incompressible and laminar only
+    """  incompressible and laminar flow only with G2 stabilisaton
     """
     def __init__(self, case_input):
 
@@ -161,6 +161,7 @@ class CoupledNavierStokesSolver(SolverBase):
         Dirichlet_bcs_up, F_bc = self.update_boundary_conditions(time_iter_, trial_function, test_function, ds)
         for it in F_bc:
             F += it
+
         return F, Dirichlet_bcs_up
 
     def F_static(self, trial_function, test_function, up_0):
@@ -177,9 +178,34 @@ class CoupledNavierStokesSolver(SolverBase):
             - p*div(v)*dx \
             + div(u)*q*dx
         if self.settings['body_source']: 
-            F -= inner(self.get_body_source(), v)*dx  # dot() ?
+            F -= inner(self.get_body_source(), v)*dx 
+
         # Add convective term
         F += inner(dot(grad(u), u_0), v)*dx  # u_0 is the current value solved
+
+        if 'advection_settings' in self.settings:
+            ads = self.settings['advection_settings']  # a very big panelty factor can stabalize, but leading to diffusion error
+        else:
+            ads = {'stabilization_method': None}  # default none
+        #dt uniform time step and u^ ; T^ are values of velocity and temperature from previous time
+        if ads['stabilization_method'] and ads['stabilization_method'] == 'G2':
+            h = 2*Circumradius(self.mesh)  # cell size
+            if ads['Re']<=1:
+                delta1 = ads['kappa1'] * h*h
+                delta2 = ads['kappa2'] * h*h
+            else:  # convection dominant, test_f<trial_f*h
+                U0_square = dot(u_0, u_0)
+                if self.transient:
+                    dt = self.get_time_step(time_iter_)
+                    delta1 = ads['kappa1'] /2.0 * 1.0/sqrt(1.0/(dt*dt) + 1.0/U0_square/h/h)
+                else:
+                    delta1 = ads['kappa1'] /2.0 * h/sqrt(U0_square)
+                delta2 = ads['kappa2'] * h
+            D_u =  delta1 * inner(dot(u_0, grad(u)), dot(u_0, grad(v)))*dx
+            # D_u += delta2 * dot(grad(rho_0, grad(v)))  # D_s has the same item, why?
+            #D_s =    density related item,  it should be ignore for incompressible NS equation
+            F -= D_u
+
         return F
 
     def F_transient(self, time_iter_, trial_function, test_function, up_0, up_prev):
@@ -284,9 +310,9 @@ class CoupledNavierStokesSolver(SolverBase):
         return up_0
         """
 
-    def solve_static(self, F, up_, Dirichlet_bcs_up):
+    def solve_form(self, F, up_, Dirichlet_bcs_up):
         # Solve stationary Navier-Stokes problem with Picard method
-        # other methods may be more acurate and faster
+        # nonlinear solver is possible
 
         iter_ = 0
         max_iter = 50
