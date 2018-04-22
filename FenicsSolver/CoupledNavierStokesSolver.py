@@ -34,9 +34,10 @@ from dolfin import *
 
 """
 TODO:
-1. temperature induced natural convection
-2. 
+1. temperature induced natural convection, need solve thermal, 
+2. noninertial frame of reference, linear accelation can be merged to body source; centrifugal and coriolis forces
 3. test parallel by MPI
+4. mesh moving velocity
 """
 
 from .SolverBase import SolverBase
@@ -220,8 +221,8 @@ class CoupledNavierStokesSolver(SolverBase):
         n = FacetNormal(self.mesh)  # used in pressure force
 
         if self.solving_temperature:
-            u, p, pT = split(trial_function)
-            v, q, qT = split(test_function)
+            u, p, T = split(trial_function)
+            v, q, Tq = split(test_function)
         else:
             u, p = split(trial_function)
             v, q = split(test_function)
@@ -251,8 +252,13 @@ class CoupledNavierStokesSolver(SolverBase):
                         print("found velocity boundary for id = {}".format(boundary['boundary_id']))
                     elif bc['type'] == 'Neumann':  # zero gradient, outflow
                         NotImplementedError('Neumann boundary for velocity is not implemented')
-                    elif bc['type'] == 'symmetry' or bc['type'] == 'farfield': 
-                        pass   # velocity gradient is zero, do nothing here, no normal stress, see [COMSOL Multiphysics Modeling Guide]
+                    elif bc['type'] == 'symmetry':
+                        # normal stress project to tangital directions:  t*(-pI + viscous_force)*n
+                        F_bc.append(inner(dot(u, n), v)*ds(boundary['boundary_id']))  # no velocity gradient across the boundary
+                        F_bc.append(-self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(boundary['boundary_id']))
+                    elif bc['type'] == 'farfield':
+                        F_bc.append(dot(grad(u), n)*v * ds(boundary['boundary_id']))
+                        #velocity gradient is zero, do nothing here, no normal stress, see [COMSOL Multiphysics Modeling Guide]
                     else:
                         print('velocity boundary type`{}` is not supported'.format(bc['type']))
                 elif bc['variable'] == 'pressure':
@@ -263,8 +269,7 @@ class CoupledNavierStokesSolver(SolverBase):
                         F_bc.append(-self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(boundary['boundary_id']))  #  pressure no viscous stress boundary
                         print("found pressure boundary for id = {}".format(boundary['boundary_id']))
                     elif bc['type'] == 'symmetry':
-                        # normal stress project to tangital directions:  t*(-pI + viscous_force)*n
-                        F_bc.append(-self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(boundary['boundary_id']))
+                        pass # set in velocity
                     elif bc['type'] == 'farfield':   # 'open' to large volume is same with farfield
                         F_bc.append(-self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(boundary['boundary_id']))  #  pressure no viscous stress boundary
                     elif bc['type'] == 'Neumann':  # zero gradient
@@ -273,13 +278,15 @@ class CoupledNavierStokesSolver(SolverBase):
                         print('pressure boundary type`{}` is not supported thus ignored'.format(bc['type']))
                 elif bc['variable'] == 'temperature' and self.solving_temperature:  # used by compressible NS solver
                     bvalue = self.translate_value(bc['value'])
-                    if bc['type'] == 'Dirichlet':  # pressure  inlet or outlet
+                    if bc['type'] == 'Dirichlet':
                         Dirichlet_bcs_up.append(DirichletBC(W.sub(2), bvalue, self.boundary_facets, boundary['boundary_id']) )
                         print("found temperature boundary for id = {}".format(boundary['boundary_id']))
+                    if bc['type'] == 'symmetry':
+                        F_bc.append(dot(grad(T), n)*Tq*ds(boundary['boundary_id']))
                         """
-                        elif bc['type'] == 'Neumann':  # zero gradient
+                        elif bc['type'] == 'Neumann':  #also depends on the form of thermal variational form, diffusion?
                             F -=
-                        elif bc['type'] == 'Robin':  # zero gradient
+                        elif bc['type'] == 'Robin':  'HTC'
                             F -=
                         """
                     else:

@@ -64,7 +64,8 @@ material = {'name': "silicon", 'thermal_conductivity': 149, 'specific_heat_capac
 
 
 length = cy_max - cy_min
-electric_displacement = (V_high-V_low)/length * material['electric_permittivity']   # divided by length scale which is unity 1 ->  heat flux W/m^2
+epsilon = material['relative_electric_permittivity']*electric_permittivity_0
+electric_displacement = (V_high-V_low)/length * epsilon     # divided by length scale which is unity 1 ->  heat flux W/m^2
 
 bcs = { 
         "hot": {'boundary': top, 'boundary_id': 1, 'type': 'Dirichlet', 'value': Constant(V_high)}, 
@@ -73,7 +74,7 @@ bcs = {
         #back and front is zero gradient, need not set, it is default
 }
 
-settings = {'solver_name': 'ScalerEquationSolver',
+settings = {'solver_name': 'ScalerTransportSolver',
                 'mesh': None, 'function_space': Q, 'periodic_boundary': None, 'element_degree': 1,
                 'boundary_conditions': bcs, 'body_source': None, 
                 'initial_values': {'electric_potential': V_ground},
@@ -96,7 +97,7 @@ def test(interactively = False):
     using_anisotropic_material = True
     if using_anisotropic_material:
         #tensor-weighted-poisson/python/demo_tensor-weighted-poisson.py
-        settings['material']['electric_permittivity'] = K_anisotropic
+        settings['material']['relative_elelectric_permittivity'] = K_anisotropic
     else:
         print("analytical current density [A/m^2] = ", electric_displacement)
 
@@ -125,7 +126,7 @@ def post_process(T, interactively):
     bottom.mark(boundary_facets, id)
     ds= Measure("ds", subdomain_data=boundary_facets)
 
-    flux = assemble(settings['material']['electric_permittivity'] * dot(grad(T), normal)*ds(id))
+    flux = assemble(epsilon * dot(grad(T), normal)*ds(id))
     print("integral on the top surface(A)", flux)
 
     plot(T, title='electric Potential (V)')

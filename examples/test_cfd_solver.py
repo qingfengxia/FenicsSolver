@@ -64,7 +64,7 @@ def setup(using_elbow = True, using_3D = False, compressible=False):
         outlet = AutoSubDomain(lambda x, on_boundary: on_boundary and near(x[0], x_max))
     else:
         #length_scale = 1
-        mesh = UnitSquareMesh(20, 50)
+        mesh = UnitSquareMesh(40, 100)
         static_boundary = AutoSubDomain(lambda x, on_boundary: on_boundary and (near(x[0], 0) or near(x[0], 1)))
 
         bottom = AutoSubDomain(lambda x, on_boundary: on_boundary and near(x[1], 0) )
@@ -152,12 +152,14 @@ def test_incompressible(using_elbow = True):
     solving_energy_equation = False
 
     if using_elbow:
-        Re = 1e-3  # see pressure change
+        Re = 1e-3  # see pressure change,     # stabilization_method seems make no difference
     else:
+        s['fe_degree'] = 10  # test failed, can not finish JIT
         Re = 10  # mesh is good enough to simulate higher Re
 
     fluid = {'name': 'oil', 'kinematic_viscosity': (length_scale * max_vel)/Re, 'density': 800}
     s['material'] = fluid
+
     s['advection_settings'] = {'Re': Re, 'stabilization_method': 'G2' , 'kappa1': 4, 'kappa2': 2}
     print("Reynolds number = ", Re)
 

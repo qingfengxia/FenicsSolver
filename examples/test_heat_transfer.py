@@ -198,9 +198,9 @@ def test_radiation(interactively):
     bcs["cold"] = {'boundary': bottom, 'boundary_id': 2, 'values': {
                     'temperature': {'variable': 'temperature', 'type': 'Dirichlet', 'value': Constant(T_cold)}
                  } }
-    #settings['radiation_settings'] = {'ambient_temperature': T_ambient-20, 'emissivity': 0.9}
+    settings['radiation_settings'] = {'ambient_temperature': T_ambient-20, 'emissivity': 0.9}
     settings['convective_velocity'] = None
-    solver = ScalerEquationSolver(settings)
+    solver = ScalerTransportSolver(settings)
     solver.material['conductivity'] = K
     solver.material['emissivity'] = 0.9
 
@@ -212,7 +212,7 @@ def test(interactively = True):
     #setup(using_anisotropic_conductivity = False, using_convective_velocity = False, using_DG_solver = False, using_HTC = True, interactively = interactively)
     #DG is not test here
     setup(using_anisotropic_conductivity = False, using_convective_velocity = True, using_DG_solver = True, using_HTC = True, interactively = interactively)
-    #test_radiation(True)
+    test_radiation(True)
 
 if __name__ == '__main__':
     test()

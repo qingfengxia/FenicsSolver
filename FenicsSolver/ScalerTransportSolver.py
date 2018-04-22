@@ -29,6 +29,7 @@ import numpy as np
 from dolfin import *
 
 supported_scalers = {'temperature', 'electric_potential', 'species_concentration'}
+electric_permittivity_in_vacumm = 8.854187817e-12
 # For small species factor, diffusivity = primary species, such as dye in water, always with convective velocity
 # electric_potential, only for dieletric material electrostatics (permittivity/conductivity << 1)
 # magnetic_potential is a vector, magnetostatics (static current) is solved in MaxwellEMSolver (permittivity/conductivity >> 1)
@@ -71,7 +72,7 @@ class ScalerTransportSolver(SolverBase):
         if self.scaler_name == "temperature":
             c = self.material['density'] * self.material['specific_heat_capacity']
         elif self.scaler_name == "electric_potential":
-            c = 8.854187817e-12  # electric_permittivity_in_vacumm
+            c = electric_permittivity_in_vacumm
         elif self.scaler_name == "spicies_concentration":
             c = 1
         else:
@@ -97,7 +98,7 @@ class ScalerTransportSolver(SolverBase):
         elif self.scaler_name == "temperature":
             c = self.material['thermal_conductivity']
         elif self.scaler_name == "electric_potential":
-            c = self.material['electric_permittivity']
+            c = self.material['relative_electric_permittivity'] * electric_permittivity_in_vacumm
         elif self.scaler_name == "spicies_concentration":
             c = self.material['diffusivity']
         else:
@@ -105,6 +106,7 @@ class ScalerTransportSolver(SolverBase):
         return self.get_material_value(c)  # to deal with nonlinear material
 
     def get_convective_velocity_function(self, convective_velocity):
+        #
         self.vector_function_space = VectorFunctionSpace(self.mesh, 'CG', self.degree+1)
         vel = self.translate_value(convective_velocity, self.vector_function_space)
         #print('type of convective_velocity', type(convective_velocity), type(vel))
@@ -112,16 +114,23 @@ class ScalerTransportSolver(SolverBase):
         return vel
 
     def update_boundary_conditions(self, time_iter_, T, Tq, ds):
+        # test_function is removed from integrals_N items, so SPUG residual can include boundary condition
         capacity = self.capacity() # constant, experssion or tensor
 
         bcs = []
         integrals_N = []
         if 'point_source' in self.settings and self.settings['point_source']:
-            ps = self.settings['surface_source']
-            #assume it s PointSource type, or a list of PointSource
+            ps = self.settings['point_source']
+            # FIXME: not test yet, assuming PointSource type, or a list of PointSource(value, position)
             bcs.append(ps)
+
+        mesh_normal = FacetNormal(self.mesh)  # n is predefined as outward as positive
         if 'surface_source' in self.settings and self.settings['surface_source']:
-            integrals_N.append(dot(self.settings['surface_source'], Tq)*ds)
+            gS = self.get_flux(self.settings['surface_source']['value'])
+            if 'direction' in self.settings['surface_source'] and self.settings['surface_source']['direction']:
+                direction_vector = self.settings['surface_source']['direction']
+            else:
+                integrals_N.append(dot(mesh_normal*gS, v)*ds)
 
         for name, bc_settings in self.boundary_conditions.items():
             i = bc_settings['boundary_id']
@@ -157,7 +166,7 @@ class ScalerTransportSolver(SolverBase):
                 else:
                     integrals_N.append(g*Tq*ds(i))
             elif bc['type'] == 'HTC':  # FIXME: HTC is not a general name or general type, only for thermal analysis
-                #Robin, how to get the boundary value,  T as the first, HTC as the second
+                #Robin, how to get the boundary value,  T as the first, HTC as the second,  does not apply to nonlinear PDE
                 Ta = self.translate_value(bc['ambient'])
                 htc = self.translate_value(bc['value'])  # must be specified in Constant or Expressed in setup dict
                 if self.using_diffusion_form:
@@ -168,7 +177,7 @@ class ScalerTransportSolver(SolverBase):
                 raise SolverError('boundary type`{}` is not supported'.format(bc['type']))
         return bcs, integrals_N
 
-    def generate_form(self, time_iter_, T, Tq, T_current, T_prev):
+    def generate_form(self, time_iter_, T, T_test, T_current, T_prev):
         # T, Tq can be shared between time steps, form is unified diffussion coefficient
         normal = FacetNormal(self.mesh)
 
@@ -180,7 +189,35 @@ class ScalerTransportSolver(SolverBase):
         diffusivity = self.diffusivity()  # diffusivity
         #print(conductivity, capacity, diffusivity)
 
-        bcs, integrals_N = self.update_boundary_conditions(time_iter_, T, Tq, ds)
+        # detection here, to deal with assigned velocity after solver intialization
+        if not hasattr(self, 'convective_velocity'):  # if velocity is not directly assigned to the solver
+            if 'convective_velocity' in self.settings and self.settings['convective_velocity']:
+                self.convective_velocity = self.settings['convective_velocity']
+            else:
+                self.convective_velocity = None
+
+        if self.convective_velocity:
+            if 'advection_settings' in self.settings:
+                ads = self.settings['advection_settings']  # a very big panelty factor can stabalize, but leading to diffusion error
+            else:
+                ads = {'stabilization_method': None}  # default none
+
+            velocity = self.get_convective_velocity_function(self.convective_velocity)
+            h = 2*Circumradius(self.mesh)  # cell size
+
+            if ads['stabilization_method'] == 'SPUG':
+                # Add SUPG stabilisation terms
+                print('solving convection by SPUG stablization')
+
+                vnorm = sqrt(dot(velocity, velocity))
+                Pe = ads['Pe']  # Peclet number: 
+                tau = 0.5*h*pow(4.0/(Pe*h)+2.0*vnorm,-1.0)
+                Tq = (T_test + tau*dot(velocity, grad(T_test)))
+                #Tq = (T_test + h/(2*vnorm)*dot(velocity, grad(T_test)))
+            else:
+                Tq = T_test
+        else:
+            Tq = T_test
 
         def body_source_item():
             if isinstance(self.body_source, dict):
@@ -198,80 +235,38 @@ class ScalerTransportSolver(SolverBase):
 
         # poission equation, unified for all kind of variables
         def F_static(T, Tq):
-            F =  inner( conductivity * grad(T), grad(Tq))*dx
-            if integrals_N:
-                F -= sum(integrals_N)
-            # body source is dealt in later section
-            return F
-
-        def F_convective():
-            if 'advection_settings' in self.settings:
-                ads = self.settings['advection_settings']  # a very big panelty factor can stabalize, but leading to diffusion error
-            else:
-                ads = {'stabilization_method': None}  # default no, 
-
-            h = 2*Circumradius(self.mesh)  # cell size
-            velocity = self.get_convective_velocity_function(self.convective_velocity)
-            if self.transient_settings['transient']:
-                dt = self.get_time_step(time_iter_)
-                # Mid-point solution
-                T_mid = 0.5*(T_prev + T)
-                # Residual
-                res = ((T - T_prev)/dt + dot(velocity, grad(T_mid)))*capacity - conductivity * div(grad(T_mid))  # does not support conductivity tensor
-                # Galerkin variational problem
-                F = ((T - T_prev)/dt+ dot(velocity, grad(T_mid)))*capacity*dx*Tq + conductivity * dot(grad(Tq), grad(T_mid))*dx
-            else:
-                T_mid = T
-                # Residual, why the sign is minus for diffusion item???
-                res = dot(velocity, grad(T_mid))*capacity - conductivity * div(grad(T_mid))   # does not support tensor conductivity
-                #print(res)
-                # Galerkin variational problem
-                F = Tq*dot(velocity, grad(T_mid))*capacity*dx + conductivity * dot(grad(Tq), grad(T_mid))*dx
-
-            if integrals_N:
-                F -= sum(integrals_N)
-            if self.body_source:
-                #print(self.body_source)
-                res -= self.get_body_source()
-                F -= body_source_item()
-
-            using_mass_conservation = False  # not well tested, 
-            if using_mass_conservation:
-                print('mass conservation compensation on boundary')
-                sigma = Constant(2) # penalty parameter
-                #he = self.mesh.ufl_cell().max_facet_edge_length
-                F += (1.0/ h**sigma) * inner(dot(velocity, normal), T)*capacity*Tq*ds
-                #F -= dot(dot(velocity, normal), T)*capacity*ds
-
-            # there could be a error in this SPUG implementation, 
-            if ads['stabilization_method'] == 'SPUG':
-                # Add SUPG stabilisation terms
-                print('solving convection by SPUG stablization')
-                vnorm = sqrt(dot(velocity, velocity))
-                F += (h/(2.0*vnorm))*dot(velocity, grad(Tq))*res*dx
-            # other stablisation_methods are not implemented
-            return F
-
-        # detection here, to deal with assigned velocity after solver intialization
-        if not hasattr(self, 'convective_velocity'):  # if velocity is not directly assigned to the solver
-            if 'convective_velocity' in self.settings and self.settings['convective_velocity']:
-                self.convective_velocity = self.settings['convective_velocity']
-            else:
-                self.convective_velocity = None
-        if self.convective_velocity:  # convective heat conduction
-            F = F_convective()
+            return  inner(conductivity * grad(T), grad(Tq))*dx
+        if self.transient_settings['transient']:
+            dt = self.get_time_step(time_iter_)
+            theta = Constant(0.5) # Crank-Nicolson time scheme
+            # Define time discretized equation, it depends on scaler type:  Energy, Species,
+            F = (1.0/dt)*inner(T-T_prev, Tq)*capacity*dx \
+                   + theta*F_static(T, Tq) + (1.0-theta)*F_static(T_prev, Tq)  # FIXME:  check using T_0 or T_prev ? 
         else:
-            if self.transient_settings['transient']:
-                dt = self.get_time_step(time_iter_)
-                theta = Constant(0.5) # Crank-Nicolson time scheme
-                # Define time discretized equation, it depends on scaler type:  Energy, Species,
-                F = (1.0/dt)*inner(T-T_prev, Tq)*capacity*dx \
-                       + theta*F_static(T, Tq) + (1.0-theta)*F_static(T_prev, Tq)  # FIXME:  check using T_0 or T_prev ? 
-            else:
-                F = F_static(T, Tq)
-            #print(F, body_source_item())
-            if self.body_source:
-                F -= body_source_item()
+            F = F_static(T, Tq)
+
+        if self.convective_velocity:
+            F += inner(velocity, grad(T))*Tq*capacity*dx
+            if ads['stabilization_method'] and ads['stabilization_method'] == 'IP':
+                print('solving convection by interior penalty stablization')
+                alpha = avg(Constant(ads['alpha']))
+                F +=  alpha*avg(h)**2*inner(jump(grad(T),normal), jump(grad(Tq),normal))*capacity*dS
+
+        bcs, integrals_N = self.update_boundary_conditions(time_iter_, T, Tq, ds)
+        if integrals_N:
+            F -= sum(integrals_N)
+
+        #print(F, body_source_item())
+        if self.body_source:
+            F -= body_source_item()
+
+        using_mass_conservation = False  # not well tested, Nitsche boundary
+        if using_mass_conservation:
+            print('mass conservation compensation for zero mass flux on the curved boundary')
+            sigma = Constant(2) # penalty parameter
+            #he = self.mesh.ufl_cell().max_facet_edge_length,    T - Constant(300)
+            F -= inner(dot(velocity, normal), (T - Constant(300)))*Tq*capacity*ds(1)  # (1.0/ h**sigma) *
+            #F -= dot(dot(velocity, normal), T)*capacity*ds
 
         #print(F)
         if self.scaler_name == "temperature":
@@ -284,28 +279,31 @@ class ScalerTransportSolver(SolverBase):
                 self.has_radiation = False
 
             if self.has_radiation:
-                Stefan_constant = 5.670367e-8  # W/m-2/K-4
-                if 'emissivity' in self.material:
-                    emissivity = self.material['emissivity']  # self.settings['radiation_settings']['emissivity'] 
-                elif 'emissivity' in self.radiation_settings:
-                    emissivity = self.radiation_settings['emissivity'] 
-                else:
-                    emissivity = 1.0
-                if 'ambient_temperature' in self.radiation_settings:
-                    T_ambient_radiaton = self.radiation_settings['ambient_temperature']
-                else:
-                    T_ambient_radiaton = self.reference_values['temperature']
-
-                m_ = emissivity * Stefan_constant
-                radiation_flux = m_*(T_ambient_radiaton**4 - pow(T, 4))  # it is nonlinear item
-                print(m_, radiation_flux, F)
-                F -= radiation_flux*Tq*ds # for all surface, without considering view angle
+                #print(m_, radiation_flux, F)
+                F -= self.radiation_flux(T)*Tq*ds # for all surface, without considering view angle
                 F = action(F, T_current)  # API 1.0 still working ; newer API , replacing TrialFunction with Function for nonlinear 
                 self.J = derivative(F, T_current, T)  # Gateaux derivative
 
         return F, bcs
 
-    def solve_static(self, F, T_current, bcs):
+    def radiation_flux(self, T):
+            Stefan_constant = 5.670367e-8  # W/m-2/K-4
+            if 'emissivity' in self.material:
+                emissivity = self.material['emissivity']  # self.settings['radiation_settings']['emissivity'] 
+            elif 'emissivity' in self.radiation_settings:
+                emissivity = self.radiation_settings['emissivity'] 
+            else:
+                emissivity = 1.0
+            if 'ambient_temperature' in self.radiation_settings:
+                T_ambient_radiaton = self.radiation_settings['ambient_temperature']
+            else:
+                T_ambient_radiaton = self.reference_values['temperature']
+
+            m_ = emissivity * Stefan_constant
+            radiation_flux = m_*(T_ambient_radiaton**4 - pow(T, 4))  # it is nonlinear item
+            return adiation_flux
+
+    def solve_form(self, F, T_current, bcs):
         if self.scaler_name == "temperature" and self.has_radiation:
             print('solving radiation by nonlinear solver')
             return self.solve_nonlinear_problem(F, T_current, bcs, self.J)

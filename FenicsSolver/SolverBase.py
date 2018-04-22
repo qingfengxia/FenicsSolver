@@ -464,7 +464,7 @@ class SolverBase():
             print("Current time = ", self.current_time, " TimerSolveAll = ", timer_solver_all.elapsed())
             pf = self.report_settings['plotting_freq']
             if pf>0 and self.current_step> 0 and (self.current_step % pf == 0) and (not self.is_mixed_function_space):
-                plot(up_current, title = "Value at time: " + str(self.current_time))
+                plot(u_current, title = "Value at time: " + str(self.current_time))
             # stop for steady case, or update time
             if not self.transient_settings['transient']:
                 break
@@ -475,7 +475,7 @@ class SolverBase():
 
         if 'saved_filename' in self.report_settings and self.report_settings['saved_filename']:
             result_file = File(self.report_settings['saved_filename'])  #XDMFFile is preferred for parallel IO
-            result_file << up_current
+            result_file << u_current
 
         return u_current
 
