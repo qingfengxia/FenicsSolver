@@ -309,14 +309,14 @@ class SolverBase():
         else:  # linear homogenous material, str, Expression, numbers.Number, Constant, Callable
             return value # self.translate_value(value)
 
-    def _translate_dict_value(self, value):
+    def _translate_dict_value_to_function(self, value):
         """ body source, initial value or material for multiple subdomains 
         dict input format: {'region1': {'subdomain_id': 1, 'value': 1}, ...}
         for performance reason, numpy array is operated directly, or cpp expression
         """
         v0 = Function(self.function_space)
         for k, v in value.item():
-            pass
+            raise NotImplementedError('not yet implemented')
         return v0
 
     def translate_value(self, value, function_space = None):
@@ -398,7 +398,10 @@ class SolverBase():
                 vdict[k]['value'] = self.translate_value(self.body_source[k]['value'])
             return vdict
         else:
-            return self.translate_value(self.body_source)
+            if self.body_source:
+                return self.translate_value(self.body_source)
+            else:
+                return None
 
     def get_time_step(self, time_iter_):
         ## fixed step, but could be supplied with an np.array/list
