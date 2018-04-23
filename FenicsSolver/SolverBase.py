@@ -372,7 +372,7 @@ class SolverBase():
             return self.settings['vector_name']
         else:
             return 'unknown'
-        
+
     def get_boundary_variable(self, bc, variable=None):
         if 'values' in bc:  # new style, boundary contains a 'values' dict
             if not variable:

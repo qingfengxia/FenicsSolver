@@ -177,6 +177,21 @@ class ScalerTransportSolver(SolverBase):
                 raise SolverError('boundary type`{}` is not supported'.format(bc['type']))
         return bcs, integrals_N
 
+    def get_body_source_items(self, time_iter_, T, Tq, dx):
+        bs = self.get_body_source()  # defined in base solver, has already translated value
+        print(bs)
+        if bs and isinstance(bs, dict):
+            S = []
+            for k,v in bs.items():
+                # it is good to using DG for multi-scale meshing, subdomain marking double
+                S.append(v['value']*Tq*dx(v['subdomain_id']))
+            return S
+        else:
+            if bs:
+                return [bs*Tq*dx]
+            else:
+                return None
+
     def generate_form(self, time_iter_, T, T_test, T_current, T_prev):
         # T, Tq can be shared between time steps, form is unified diffussion coefficient
         normal = FacetNormal(self.mesh)
@@ -219,20 +234,6 @@ class ScalerTransportSolver(SolverBase):
         else:
             Tq = T_test
 
-        def body_source_item():
-            if isinstance(self.body_source, dict):
-                S = []
-                for k,v in self.body_source.items():
-                    # it is good to using DG for multi-scale meshing, subdomain marking double
-                    S.append(v['value']*Tq*dx(v['subdomain_id']))
-                return sum(S)
-            else:
-                if self.body_source:
-                    return self.get_body_source()*Tq*dx
-                else:
-                    return None
-        #print("body_source: ", self.get_body_source())
-
         # poission equation, unified for all kind of variables
         def F_static(T, Tq):
             return  inner(conductivity * grad(T), grad(Tq))*dx
@@ -256,9 +257,9 @@ class ScalerTransportSolver(SolverBase):
         if integrals_N:
             F -= sum(integrals_N)
 
-        #print(F, body_source_item())
-        if self.body_source:
-            F -= body_source_item()
+        bs_items = self.get_body_source_items(time_iter_,T, Tq, dx)
+        if bs_items:
+            F -= sum(bs_items)
 
         using_mass_conservation = False  # not well tested, Nitsche boundary
         if using_mass_conservation:
