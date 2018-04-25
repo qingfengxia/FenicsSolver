@@ -30,14 +30,31 @@ import os.path
 
 from dolfin import *
 
-#Oasis: a high-level/high-performance open source Navier-Stokes solve
 
 """
+Feature:  coupled velocity and pressure laminar flow with G2 stabilisaton
+
+General Galerkin (G2) stabilisaton (reference paper: ) is not not well tesd.
+
 TODO:
-1. temperature induced natural convection, need solve thermal, 
-2. noninertial frame of reference, linear accelation can be merged to body source; centrifugal and coriolis forces
-3. test parallel by MPI
-4. mesh moving velocity
+1. temperature induced natural convection, need solve thermal, constant thermal expansion coeffi
+    see paper: 
+
+2. noninertial frame of reference
+linear accelation can be merged to body source, just as body
+    + ALE:  mesh moving velocity, for FSI solver
+    + SRF: for centrifugal pump, add item of centrifugal and coriolis forces
+    + MRF:  for turbine blade and stator, should be done in a coupling way
+
+reference_frame_settings = {'type': 'ALE',  'mesh_velocity': vel}
+reference_frame_settings = {'type': 'SRF',  'center_point': (0, 0, 0), 'omega': -1} 
+                                            omega: angular velocity  rad/s, minus sign mean ?? direction
+                                            omega*omega*x_vector + cross(2*omega, u_vector) 
+                                            stab for coriolis force item?
+
+3. turbulent flow: Oasis: a high-level/high-performance open source Navier-Stokes solve
+
+4. nonlinear viscosity model, nu(T), nu(U, p, T)
 """
 
 from .SolverBase import SolverBase
@@ -51,7 +68,7 @@ class CoupledNavierStokesSolver(SolverBase):
         else:
             self.solving_temperature = False
         SolverBase.__init__(self, case_input)
-
+        self.compressible = False
         # init and reference must be provided by case setup
 
         if self.solving_temperature:
@@ -99,7 +116,7 @@ class CoupledNavierStokesSolver(SolverBase):
         if self.solving_temperature:
             _initial_values.append(self.initial_values['temperature'])
             #self.function_space.ufl_element(), wht not working
-        _initial_values_expr = Expression( tuple([str(v) for v in _initial_values]), degree = 1)
+        _initial_values_expr = Expression( tuple([str(v) for v in _initial_values]), degree = self.settings['fe_degree'])
         up0 = interpolate(_initial_values_expr, self.function_space)
         return up0
 
@@ -181,10 +198,10 @@ class CoupledNavierStokesSolver(SolverBase):
         if self.settings['body_source']: 
             F -= inner(self.get_body_source(), v)*dx 
 
-        # Add convective term
+        # Add advective term, technically, convection means 
         F += inner(dot(grad(u), u_0), v)*dx  # u_0 is the current value solved
 
-        if 'advection_settings' in self.settings:
+        if 'advection_settings' in self.settings:  
             ads = self.settings['advection_settings']  # a very big panelty factor can stabalize, but leading to diffusion error
         else:
             ads = {'stabilization_method': None}  # default none
@@ -204,7 +221,7 @@ class CoupledNavierStokesSolver(SolverBase):
                 delta2 = ads['kappa2'] * h
             D_u =  delta1 * inner(dot(u_0, grad(u)), dot(u_0, grad(v)))*dx
             # D_u += delta2 * dot(grad(rho_0, grad(v)))  # D_s has the same item, why?
-            #D_s =    density related item,  it should be ignore for incompressible NS equation
+            # D_s =    density related item,  it should be ignore for incompressible NS equation
             F -= D_u
 
         return F
@@ -214,18 +231,25 @@ class CoupledNavierStokesSolver(SolverBase):
         v, q = split(test_function)
         u_0, p_0 = split(up_0)  # up_0 not in use
         u_prev, p_prev = split(up_prev)
+        #TODO: it is backward Euler, not Crank-Nicolson (2nd , unconditionally stable for diffusion problem)
         return (1 / self.get_time_step(time_iter_)) * inner(u - u_prev, v) * dx  # dot() ?
 
     def update_boundary_conditions(self, time_iter_, trial_function, test_function, ds):
         W = self.function_space
         n = FacetNormal(self.mesh)  # used in pressure force
 
+        # the sequence must be: velocity, pressure, temperature (to share code with compressible and incompressible solver)
         if self.solving_temperature:
             u, p, T = split(trial_function)
             v, q, Tq = split(test_function)
         else:
             u, p = split(trial_function)
             v, q = split(test_function)
+
+        if self.compressible:
+            i_pressure, i_velocity, i_temperature =  0, 1, 2
+        else:
+            i_pressure, i_velocity, i_temperature =  1, 0, 2
 
         Dirichlet_bcs_up = []
         F_bc = []
@@ -248,7 +272,7 @@ class CoupledNavierStokesSolver(SolverBase):
                         raise TypeError('FacetNormal can not been used in Dirichlet boundary')
                     '''
                     if bc['type'] == 'Dirichlet':
-                        Dirichlet_bcs_up.append(DirichletBC(W.sub(0), bvalue, self.boundary_facets, boundary['boundary_id']) )
+                        Dirichlet_bcs_up.append(DirichletBC(W.sub(i_velocity), bvalue, self.boundary_facets, boundary['boundary_id']) )
                         print("found velocity boundary for id = {}".format(boundary['boundary_id']))
                     elif bc['type'] == 'Neumann':  # zero gradient, outflow
                         NotImplementedError('Neumann boundary for velocity is not implemented')
@@ -264,7 +288,7 @@ class CoupledNavierStokesSolver(SolverBase):
                 elif bc['variable'] == 'pressure':
                     bvalue = self.translate_value(bc['value'])  # self.get_boundary_value(bc, 'pressure')
                     if bc['type'] == 'Dirichlet':  # pressure  inlet or outlet
-                        Dirichlet_bcs_up.append(DirichletBC(W.sub(1), bvalue, self.boundary_facets, boundary['boundary_id']) )
+                        Dirichlet_bcs_up.append(DirichletBC(W.sub(i_pressure), bvalue, self.boundary_facets, boundary['boundary_id']) )
                         F_bc.append(inner(bvalue*n, v)*ds(boundary['boundary_id'])) # very import to make sure convergence
                         F_bc.append(-self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(boundary['boundary_id']))  #  pressure no viscous stress boundary
                         print("found pressure boundary for id = {}".format(boundary['boundary_id']))
@@ -279,7 +303,7 @@ class CoupledNavierStokesSolver(SolverBase):
                 elif bc['variable'] == 'temperature' and self.solving_temperature:  # used by compressible NS solver
                     bvalue = self.translate_value(bc['value'])
                     if bc['type'] == 'Dirichlet':
-                        Dirichlet_bcs_up.append(DirichletBC(W.sub(2), bvalue, self.boundary_facets, boundary['boundary_id']) )
+                        Dirichlet_bcs_up.append(DirichletBC(W.sub(i_temperature), bvalue, self.boundary_facets, boundary['boundary_id']) )
                         print("found temperature boundary for id = {}".format(boundary['boundary_id']))
                     if bc['type'] == 'symmetry':
                         F_bc.append(dot(grad(T), n)*Tq*ds(boundary['boundary_id']))
@@ -296,30 +320,8 @@ class CoupledNavierStokesSolver(SolverBase):
         ## end of boundary setup
         return Dirichlet_bcs_up, F_bc
 
-    def solve_nonlinear(self, time_iter_, up_0, up_prev):
-        raise NotImplementedError(" nonlinear viscosity model is not implemented yet")
-        """
-        iter_ = 0
-        max_iter = 50
-        eps = 1.0
-        tol = 1E-4
-
-        timer_solver = Timer("TimerSolveNonlinearViscosity")
-        timer_solver.start()
-        while (iter_ < max_iter and eps > tol):
-            F, Dirichlet_bcs_up = self.update_boundary_conditions(time_iter_, up_0, up_prev)
-            up_0 = self.solve_static(F, up_0, Dirichlet_bcs_up)
-            iter_ += 1
-        ## end of Picard loop
-        timer_solver.stop()
-        print("*" * 10 + " end of nonlinear viscosity iteration" + "*" * 10)
-
-        return up_0
-        """
-
     def solve_form(self, F, up_, Dirichlet_bcs_up):
         # Solve stationary Navier-Stokes problem with Picard method
-        # nonlinear solver is possible
 
         iter_ = 0
         max_iter = 50
@@ -353,13 +355,7 @@ class CoupledNavierStokesSolver(SolverBase):
 
         return up_
 
-    def solve(self):
-        self.result = self.solve_transient()
-        return self.result
-
-    def plot(self):
+    def plot_result(self):
         u,p= split(self.result)
-        plot(u)  # error in plot() for version 2017.2 in Python3
+        plot(u)
         plot(p)
-        if self.report_settings['plotting_interactive']:
-            interactive()

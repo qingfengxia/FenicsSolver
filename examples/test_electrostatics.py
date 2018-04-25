@@ -28,6 +28,8 @@ from dolfin import *
 
 from FenicsSolver.ScalerTransportSolver import ScalerTransportSolver
 
+interactively = False
+
 #mesh = UnitCubeMesh(20, 20, 20)
 mesh = UnitSquareMesh(40, 40)
 Q = FunctionSpace(mesh, "CG", 1)
@@ -91,7 +93,7 @@ settings = {'solver_name': 'ScalerTransportSolver',
                 'scaler_name': 'electric_potential',
                 }
 
-def test(interactively = False):
+def test():
     using_convective_velocity = False
 
     using_anisotropic_material = True
@@ -132,7 +134,7 @@ def post_process(T, interactively):
     plot(T, title='electric Potential (V)')
     #plot(mesh)
     if interactively:
-        interactive()
+        solver.plot()
 
 if __name__ == '__main__':
     test()

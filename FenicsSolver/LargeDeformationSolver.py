@@ -46,7 +46,7 @@ class LargeDeformationSolver(NonlinearElasticitySolver):
         print('self.is_mixed_function_space in the solver', self.is_mixed_function_space)
         V = VectorElement(self.settings['fe_family'], self.mesh.ufl_cell(), self.settings['fe_degree']) 
         Q = FiniteElement(self.settings['fe_family'], self.mesh.ufl_cell(), self.settings['fe_degree'])
-        mixed_element = MixedElement([V, V, Q])
+        mixed_element = MixedElement([V, V, Q])  # displacement, velocity, pressure
 
         if periodic_boundary:
             self.function_space = FunctionSpace(self.mesh, mixed_element, constrained_domain=periodic_boundary)
@@ -93,7 +93,7 @@ class LargeDeformationSolver(NonlinearElasticitySolver):
     
         if self.transient_settings['transient']:
             dt = self.get_time_step(time_iter_)
-            q = 0.5
+            q = 0.5  # time fwd scheme 0.5: crank-niklas
         else:
             raise SolverError("large deformation solver must be solved in a transient way")
         
@@ -133,13 +133,11 @@ class LargeDeformationSolver(NonlinearElasticitySolver):
                 solver_parameters={"newton_solver":{"linear_solver":"mumps","absolute_tolerance":1e-9,"relative_tolerance":1e-7}})
         w_prev.assign(w_current)
 
-    def plot(self, w):
+    def plot_result(self):
         # Extract solution components and rename
-        (u, v, p) = w.split()
-        u.rename("u", "displacement")
-        v.rename("v", "velocity")
-        p.rename("p", "pressure")
-        # Prepare plot window
-        plt = plot(u, mode="displacement", wireframe=True)
+        (u, v, p) = split(self.result)
+        #v.rename("v", "velocity")
+        #p.rename("p", "pressure")
+        plot(u, mode="displacement", wireframe=True)
     ####################################
 

@@ -24,6 +24,16 @@
 
 from __future__ import print_function, division, absolute_import
 
+"""
+Feature: provide basic shared methods like translate_value(), build mesh and function_space
+
+'transient_settings'
++ default to fixed time step, specifying `time_step`, can specify a numpy.array of time_points
++ temporal differentiation
+    - Crank-Nicolson (2nd , unconditionally stable for diffusion problem) for ScalerTransportSolver
+    - NS function, backward Euler for the time being.
+    
+"""
 
 # make python2 and python3 compatible for unicode type, basestring is not existed in Python3
 import sys
@@ -89,6 +99,12 @@ class SolverBase():
             self.load_settings(case_input)
         else:
             raise SolverError('case setup data must be a python dict')
+        
+        if dolfin.MPI.size(dolfin.mpi_comm_world())>1:
+            self.parallel = True
+            #TODO: suppress output from other process
+        else:
+            self.parallel = False
 
     def print(self):
         import pprint
@@ -487,11 +503,18 @@ class SolverBase():
         return self.result
 
     def plot(self):
-        plot(self.result)
-        if self.report_settings['plotting_interactive']:
+        if not self.is_mixed_function_space:
+            plot(self.result)
+        else:
+            self.plot_result()
+
+        ver = dolfin.dolfin_version().split('.')
+        #if self.report_settings['plotting_interactive']:
+        if int(ver[0]) <= 2017 and int(ver[1])<2:
+            interactive()  # using VTK
+        else:
             import matplotlib.pyplot as plt
             plt.show()
-            #interactive()
 
     ####################################
     def solve_linear_problem(self, F, u, Dirichlet_bcs):
@@ -517,6 +540,7 @@ class SolverBase():
         problem = NonlinearVariationalProblem(F, u_current, Dirichlet_bcs, J)
         solver = NonlinearVariationalSolver(problem)
 
+        #TODO: set nonlinear solver parameters from settings dict
         #[print(p) for p in solver.parameters['newton_solver']]
         solver.parameters['newton_solver']['maximum_iterations'] = 500
         solver.parameters['newton_solver']['relaxation_parameter'] = 0.1
@@ -526,10 +550,6 @@ class SolverBase():
 
     def set_solver_parameters(self, solver):
         # Define a dolfin linear algobra solver parameters
-        if dolfin.MPI.size(dolfin.mpi_comm_world())>1:
-            using_MPI = True
-        else:
-            using_MPI = False
 
         parameters["linear_algebra_backend"] = "PETSc"  #UMFPACK: out of memory, PETSc divergent
         #parameters["linear_algebra_backend"] = "Eigen"  # 'uBLAS' is not supported any longer

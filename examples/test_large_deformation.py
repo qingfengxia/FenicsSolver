@@ -29,6 +29,8 @@ from dolfin import *
 from FenicsSolver.LargeDeformationSolver import LargeDeformationSolver
 from FenicsSolver import SolverBase
 
+is_interactive = True  # may be set according to env var
+
 def solve_elasticity(using_2d, length, E, nu, dt, t_end, dirname):
     """Prepares 2D geometry. Returns facet function with 1, 2 on parts of  the boundary."""
     if using_2d:
@@ -77,11 +79,11 @@ def solve_elasticity(using_2d, length, E, nu, dt, t_end, dirname):
     #
     solver = LargeDeformationSolver(s)
     w = solver.solve()
-    solver.plot(w)
+    if is_interactive:
+        solver.plot()
 
 if __name__ == '__main__':
     solve_elasticity(True, 20, 1e5, 0.3, 0.25, 5, 'results_2d_comp')
     solve_elasticity(True, 20, 1e5, 0.5, 0.25, 5, 'results_2d_incomp')
     #solve_elasticity(geometry_2d(80.0), 1e5, 0.3, 0.25, 5.0, 'results_2d_long_comp')
     #solve_elasticity(False, 20, 1e5, 0.3, 0.50, 5.0, 'results_3d_comp')
-    interactive()

@@ -121,16 +121,12 @@ def test(has_thermal_stress, free_hanging, interactively = False):
     project(grad(u), X)
     '''
 
+    #ev = solver.solve_modal()  # need proper boundary condition to test?
     u = solver.solve()
-
-    ## Plot solution of displacement
-    plot(u, title='displacement')
-    # Plot stress
-
     plot(solver.von_Mises(u), title='Stress von Mises')
     #if not run by pytest
     if interactively:
-        interactive()
+        solver.plot()
 
     ###################################
     if False:

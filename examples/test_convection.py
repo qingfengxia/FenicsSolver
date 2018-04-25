@@ -28,6 +28,19 @@ import numpy as np
 from dolfin import *
 from mshr import *
 
+interactively = True
+using_DG_solver = False
+has_convection = True
+fe_degree = 1 # 2 is possible but use more memory
+vector_degree = fe_degree
+
+if using_DG_solver:
+    heat_source = 1e5
+else:
+    heat_source = 1e5
+
+set_log_level(ERROR)
+
 def defined(x):
     return x in locals() or x in globals()
 
@@ -35,19 +48,6 @@ parameters['form_compiler']['cpp_optimize'] = True
 parameters['form_compiler']['optimize'] = True
 
 #######################################################
-using_DG_solver = False
-has_convection = True
-
-if using_DG_solver:
-    heat_source = 1e5
-else:
-    heat_source = 1e5
-
-interactively = True
-set_log_level(ERROR)
-fe_degree = 1 # 2 is possible but use more memory
-vector_degree = fe_degree
-
 r_d = 0.5
 omega = 50  # angular velocity 0.005 is correct without compensation, 
 
@@ -155,7 +155,6 @@ else:
 plot(mesh, title="mesh")
 #plot(solver.boundary_facets, title="boundary facets colored by ID")  # matplotlib can not plot 1D
 
-
 #DG for conductivity and heat source
 #Q = solver.function_space
 #DG0 = FunctionSpace(solver.mesh, 'DG', 0)  # can not mixed higher order CG and DG?
@@ -163,11 +162,10 @@ plot(mesh, title="mesh")
 #plot(solver.body_source )
 
 T = solver.solve()
-plot(T)
 
 ds= Measure("ds", subdomain_data=solver.boundary_facets)
 cooling_disc = assemble(htc*(T-T_ambient)*ds(boundary_id_disc))
 print('convective cooling from htc boundary is : ', cooling_disc)
 
 if interactively:
-    interactive()
+    solver.plot()

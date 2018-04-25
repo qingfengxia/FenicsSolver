@@ -30,14 +30,6 @@ import numpy as np
 #####################################
 from dolfin import *
 
-# Test for PETSc
-if not has_linear_algebra_backend("PETSc"):
-    print("DOLFIN has not been configured with PETSc. Exiting.")
-    exit()
-# Set backend to PETSC
-parameters["linear_algebra_backend"] = "PETSc"
-
-
 from .SolverBase import SolverBase, SolverError
 class LinearElasticitySolver(SolverBase):
     """ features:
@@ -215,23 +207,29 @@ class LinearElasticitySolver(SolverBase):
         # calc boundingbox to make sure no large deformation?
         return u_
 
-    def solve(self):
-        u = self.solve_transient()  # defined in SolverBase
-        
-        if self.solving_modal:
-            self.solve_modal(F, bcs)  # test passed
+    def solve_modal(self):
+        trial_function = TrialFunction(self.function_space)
+        test_function = TestFunction(self.function_space)
+        # Define functions for transient loop
+        u_current = self.get_initial_field()  # init to default or user provided constant
+        u_prev = Function(self.function_space)
+        u_prev.assign(u_current)
 
-        return u
+        current_step = 0
+        F, bcs = self.generate_form(current_step, trial_function, test_function, u_current, u_prev)
+        return self.solve_modal_form(F, bcs)
 
-    def solve_modal(self, F, bcs):
+    def solve_modal_form(self, F, bcs):
+        # Test for PETSc
+        if not has_linear_algebra_backend("PETSc"):
+            print("DOLFIN has not been configured with PETSc. Exiting.")
+            exit()
+        # Set backend to PETSC
+        parameters["linear_algebra_backend"] = "PETSc"
+
         # todo: Assemble stiffness form, it is not fully tested yet
         A = PETScMatrix()
         b = PETScVector()
-        '''
-        assemble(a, tensor=A)
-        for bc in bcs:
-            bc.apply(A)          # apply the boundary conditions
-        '''
         assemble_system(lhs(F), rhs(F), bcs, A_tensor=A, b_tensor=b)  # preserve symmetry
 
         # Create eigensolver
@@ -251,7 +249,3 @@ class LinearElasticitySolver(SolverBase):
         ev.vector()[:] = rx
 
         return ev
-
-
-if __name__ == '__main__':
-    test()

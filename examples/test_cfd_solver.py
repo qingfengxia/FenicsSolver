@@ -28,6 +28,8 @@ import numpy as np
 
 from dolfin import *
 
+is_interactive = True
+
 transient = False
 T_ambient =300
 T_wall = 350
@@ -143,9 +145,7 @@ def test_compressible():
     solver = CompressibleNSSolver.CompressibleNSSolver(s)  # set a very large viscosity for the large inlet width
     #solver.init_values = Expression(('1', '0', '1e-5'), degree=1)
     u,p, T= split(solver.solve())
-    plot(u)
-    plot(p)
-
+    solver.plot()
 
 def test_incompressible(using_elbow = True):
     s = setup(using_elbow, using_3D = False, compressible = False)
@@ -154,7 +154,7 @@ def test_incompressible(using_elbow = True):
     if using_elbow:
         Re = 1e-3  # see pressure change,     # stabilization_method seems make no difference
     else:
-        s['fe_degree'] = 10  # test failed, can not finish JIT
+        s['fe_degree'] = 1  # test failed, can not finish JIT
         Re = 10  # mesh is good enough to simulate higher Re
 
     fluid = {'name': 'oil', 'kinematic_viscosity': (length_scale * max_vel)/Re, 'density': 800}
@@ -167,9 +167,8 @@ def test_incompressible(using_elbow = True):
     solver = CoupledNavierStokesSolver.CoupledNavierStokesSolver(s)  # set a very large viscosity for the large inlet width
     #solver.init_values = Expression(('1', '0', '1e-5'), degree=1)
     u,p= split(solver.solve())
-    plot(u)
-    plot(p)
-    #plot(solver.viscous_heat(u,p))
+    if is_interactive:
+        solver.plot()
 
     if solving_energy_equation:  # not fully tested
         from FenicsSolver import  ScalerEquationSolver
@@ -186,8 +185,7 @@ if __name__ == '__main__':
     test_incompressible()
     test_incompressible(False)
     is_interactive = True
-    if is_interactive:
-        interactive()
+
     # manually call test function,  if discovered by google test, it will not plot in interactive mode
     #test_incompressible(False, True)  # Elbow 3D is slow but possible
     #test_compressible(True, True)

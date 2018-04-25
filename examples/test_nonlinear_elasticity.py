@@ -28,9 +28,11 @@ from dolfin import *
 from FenicsSolver import LinearElasticitySolver
 from FenicsSolver import NonlinearElasticitySolver
 from FenicsSolver import SolverBase
+
+interactively = True
 set_log_level(ERROR)
 
-def test(interactively = False):
+def test():
 
     # Create mesh and define function space
     mesh = UnitCubeMesh(24, 16, 16)
@@ -72,13 +74,12 @@ def test(interactively = False):
 
     u = solver.solve()
     ## Plot solution of displacement
-    plot(u, title='displacement')
     # Plot stress, fixme:  von_Mises may not apply
     #plot(solver.von_Mises(u), title='Stress von Mises')
 
     #if not run by pytest
     if interactively:
-        interactive()
-    
+        solver.plot()
+
 if __name__ == '__main__':
-    test(interactively = True)
+    test()
