@@ -28,18 +28,31 @@ import numpy as np
 from dolfin import *
 from mshr import *
 
+
 interactively = True
 using_DG_solver = False
+
+def defined(x):
+    return x in locals() or x in globals()
+
+parameters['form_compiler']['cpp_optimize'] = True
+parameters['form_compiler']['optimize'] = True
+
+#######################################################
 has_convection = True
 fe_degree = 1 # 2 is possible but use more memory
 vector_degree = fe_degree
 
 if using_DG_solver:
-    heat_source = 1e5
+    heat_source = None
 else:
     heat_source = 1e5
 
 set_log_level(ERROR)
+
+fe_degree = 1 # 2 is possible but use more memory
+vector_degree = fe_degree  +1
+
 
 def defined(x):
     return x in locals() or x in globals()
@@ -138,7 +151,7 @@ settings = {'solver_name': 'ScalerTransportSolver',
 
 
 if using_DG_solver:
-    # DG solver still FAIL !!!!  th
+    # DG solver still FAIL !!!!
     from FenicsSolver.ScalerTransportDGSolver import ScalerTransportDGSolver
     solver = ScalerTransportDGSolver(settings)
     #velocity = interpolate(v_e, solver.vector_function_space)

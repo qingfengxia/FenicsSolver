@@ -172,9 +172,10 @@ class CoupledNavierStokesSolver(SolverBase):
         # Define unknown and test function(s)
 
         ## weak form
-        F = self.F_static(trial_function, test_function, up_current)
         if self.transient:  # temporal scheme
-            F += self.F_transient(time_iter_, trial_function, test_function, up_current, up_prev)
+            F = self.F_static(trial_function, test_function, up_current)
+        else:
+            F = self.F_transient(time_iter_, trial_function, test_function, up_current, up_prev)
 
         Dirichlet_bcs_up, F_bc = self.update_boundary_conditions(time_iter_, trial_function, test_function, ds)
         for it in F_bc:
@@ -198,28 +199,46 @@ class CoupledNavierStokesSolver(SolverBase):
         if self.settings['body_source']: 
             F -= inner(self.get_body_source(), v)*dx 
 
+        advection_velocity = u_0 # u_0 is the current value to be solved for steady case
+        if 'reference_frame_settings' in self.settings:
+            rfs = self.settings['reference_frame_settings']
+            if rfs['type'] == 'ALE':  # also used in FSI mesh moving
+                advection_velocity = u_0 - rfs['mesh_velocity']  # treated as part of advection, stabilized
+            elif rfs['type'] == 'SRF':
+                pass
+            else:
+                raise SolverError('reference_frame_settings type `{}` is not supported'.format(rfs['type']))
+
         # Add advective term, technically, convection means 
-        F += inner(dot(grad(u), u_0), v)*dx  # u_0 is the current value solved
+        F += inner(dot(grad(u), advection_velocity), v)*dx
 
         if 'advection_settings' in self.settings:  
             ads = self.settings['advection_settings']  # a very big panelty factor can stabalize, but leading to diffusion error
         else:
             ads = {'stabilization_method': None}  # default none
-        #dt uniform time step and u^ ; T^ are values of velocity and temperature from previous time
+
         if ads['stabilization_method'] and ads['stabilization_method'] == 'G2':
+            """
+            ref: 
+            dt is uniform time step, and u^ ; T^ are values of velocity and temperature from previous time
+            delta1 and delta2 are stablisation parameter defined in DG
+            Johan Hoffman and Claes Johnson. Computational Turbulent Incompressible Flow, 
+            volume 4 of Applied Mathematics: Body and Soul. Springer, 2007. 
+            URL http://dx.doi.org/10.1007/978-3-540-46533-1.
+            """
             h = 2*Circumradius(self.mesh)  # cell size
             if ads['Re']<=1:
                 delta1 = ads['kappa1'] * h*h
                 delta2 = ads['kappa2'] * h*h
             else:  # convection dominant, test_f<trial_f*h
-                U0_square = dot(u_0, u_0)
+                U0_square = dot(advection_velocity, advection_velocity)
                 if self.transient:
                     dt = self.get_time_step(time_iter_)
                     delta1 = ads['kappa1'] /2.0 * 1.0/sqrt(1.0/(dt*dt) + 1.0/U0_square/h/h)
                 else:
                     delta1 = ads['kappa1'] /2.0 * h/sqrt(U0_square)
                 delta2 = ads['kappa2'] * h
-            D_u =  delta1 * inner(dot(u_0, grad(u)), dot(u_0, grad(v)))*dx
+            D_u =  delta1 * inner(dot(advection_velocity, grad(u)), dot(advection_velocity, grad(v)))*dx
             # D_u += delta2 * dot(grad(rho_0, grad(v)))  # D_s has the same item, why?
             # D_s =    density related item,  it should be ignore for incompressible NS equation
             F -= D_u
@@ -231,8 +250,9 @@ class CoupledNavierStokesSolver(SolverBase):
         v, q = split(test_function)
         u_0, p_0 = split(up_0)  # up_0 not in use
         u_prev, p_prev = split(up_prev)
+        F = self.F_static(trial_function, test_function, up_current)
         #TODO: it is backward Euler, not Crank-Nicolson (2nd , unconditionally stable for diffusion problem)
-        return (1 / self.get_time_step(time_iter_)) * inner(u - u_prev, v) * dx  # dot() ?
+        return F + (1 / self.get_time_step(time_iter_)) * inner(u - u_prev, v) * dx
 
     def update_boundary_conditions(self, time_iter_, trial_function, test_function, ds):
         W = self.function_space
@@ -256,7 +276,15 @@ class CoupledNavierStokesSolver(SolverBase):
         #Dirichlet_bcs_up = [DirichletBC(W.sub(0), Constant(0,0,0), boundary_facets, 0)] #default vel, should be set before call this
         for key, boundary in self.boundary_conditions.items():
             #print(boundary)
-            if isinstance(boundary['values'], list):
+            if 'type' in boundary and boundary['type'] == 'coupling':
+                if not 'values' in boundary:
+                    #if values are not supplied, set to fixed wall condition
+                    boundary['values'] = [{'variable': "velocity",'type': 'Dirichlet', 'value': self.dimension*(0.0,)}]
+                else:
+                    # set to a FecetFunction by a coupling solver
+                    continue
+
+            if 'values' in boundary and isinstance(boundary['values'], list):
                 bc_values = boundary['values']
             else:
                 bc_values = boundary['values'].values()
@@ -264,7 +292,7 @@ class CoupledNavierStokesSolver(SolverBase):
                 if bc['variable'] == 'velocity':
                     print(bc['value'])
                     bvalue = self.translate_value(bc['value'])
-                    '''
+                    '''  only velocity vector is acceptable, it must NOT be a magnitude scaler
                     if hasattr(bc['value'], '__len__') and len(bc['value']) == self.dimension:
                         bvalue = self.translate_value(bc['value'])
                     else:  # scaler
@@ -280,7 +308,7 @@ class CoupledNavierStokesSolver(SolverBase):
                         # normal stress project to tangital directions:  t*(-pI + viscous_force)*n
                         F_bc.append(inner(dot(u, n), v)*ds(boundary['boundary_id']))  # no velocity gradient across the boundary
                         F_bc.append(-self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(boundary['boundary_id']))
-                    elif bc['type'] == 'farfield':
+                    elif bc['type'] == 'farfield':  # 'outflow'
                         F_bc.append(dot(grad(u), n)*v * ds(boundary['boundary_id']))
                         #velocity gradient is zero, do nothing here, no normal stress, see [COMSOL Multiphysics Modeling Guide]
                     else:
@@ -293,7 +321,7 @@ class CoupledNavierStokesSolver(SolverBase):
                         F_bc.append(-self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(boundary['boundary_id']))  #  pressure no viscous stress boundary
                         print("found pressure boundary for id = {}".format(boundary['boundary_id']))
                     elif bc['type'] == 'symmetry':
-                        pass # set in velocity
+                        pass # already set in velocity, should be natural zero gradient for pressure
                     elif bc['type'] == 'farfield':   # 'open' to large volume is same with farfield
                         F_bc.append(-self.viscosity()*inner((grad(u) + grad(u).T)*n, v)*ds(boundary['boundary_id']))  #  pressure no viscous stress boundary
                     elif bc['type'] == 'Neumann':  # zero gradient
@@ -308,9 +336,10 @@ class CoupledNavierStokesSolver(SolverBase):
                     if bc['type'] == 'symmetry':
                         F_bc.append(dot(grad(T), n)*Tq*ds(boundary['boundary_id']))
                         """
+                        TODO: how to share code and boundary setup with ScalerTransportSolver
                         elif bc['type'] == 'Neumann':  #also depends on the form of thermal variational form, diffusion?
                             F -=
-                        elif bc['type'] == 'Robin':  'HTC'
+                        elif bc['type'] == 'Robin':  # 'HTC'
                             F -=
                         """
                     else:

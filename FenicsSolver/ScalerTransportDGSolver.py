@@ -45,6 +45,7 @@ class ScalerTransportDGSolver(ScalerTransportSolver):
         self.using_diffusion_form = True
 
     def generate_function_space(self, periodic_boundary):
+        self.is_mixed_function_space = False
         if periodic_boundary:
             self.function_space_CG = FunctionSpace(self.mesh, "CG", self.degree, constrained_domain=periodic_boundary)
             self.function_space = FunctionSpace(self.mesh, "DG", self.degree, constrained_domain=periodic_boundary)
@@ -69,10 +70,6 @@ class ScalerTransportDGSolver(ScalerTransportSolver):
         h = CellSize(self.mesh)  # cell size
         h_avg = (h('+') + h('-'))/2
         # Penalty term
-        if self.dimension == 2:
-            alpha = Constant(5.0)  # default 5 for 2D, but it needs to be higher for 3D case
-        else:
-            alpha = Constant(500)
 
         dx= Measure("dx", subdomain_data=self.subdomains)  # 
         ds= Measure("ds", subdomain_data=self.boundary_facets)
@@ -84,25 +81,50 @@ class ScalerTransportDGSolver(ScalerTransportSolver):
 
         bcs, integrals_N = self.update_boundary_conditions(time_iter_, T, Tq, ds)
 
-        # poission equation, unified for all kind of variables
-        def F_static(T, Tq):
-            F =  inner( conductivity * grad(T), grad(Tq))*dx
-            if integrals_N:
-                F -= sum(integrals_N)
-            if self.body_source:
-                F -= Tq * self.body_source * dx
-            return F
-
         def F_convective():
             velocity = self.get_convective_velocity_function(self.convective_velocity)
-            if self.transient_settings['transient']:
-                raise NotImplementedError()
+            vel_n = (dot(velocity, n) + abs(dot(velocity, n)))/2.0
+            
+            if True:
+                #http://www.karlin.mff.cuni.cz/~hron/fenics-tutorial/discontinuous_galerkin/doc.html
+                # the only difference between official DG advection tutorial is `alpha/avg(h)`
+                Pe= 1.0/diffusivity
+                alpha = 1
+                theta = 0.5
+
+                def a(u,v) :
+                    # Bilinear form
+                    a_int = dot(grad(v), (1.0/Pe)*grad(u) - velocity*u)*dx
+                    
+                    a_fac = (1.0/Pe)*(alpha/avg(h))*dot(jump(u, n), jump(v, n))*dS \
+                            - (1.0/Pe)*dot(avg(grad(u)), jump(v, n))*dS \
+                            - (1.0/Pe)*dot(jump(u, n), avg(grad(v)))*dS
+                    
+                    a_vel = dot(jump(v), vel_n('+')*u('+') - vel_n('-')*u('-') )*dS  + dot(v, vel_n*u)*ds
+                    
+                    a = a_int + a_fac + a_vel
+                    return a
+
+                if self.transient_settings['transient']:
+                    # Define variational forms
+                    a0=a(T_prev,Tq)
+                    a1=a(T,Tq)
+
+                    F = (1/dt)*inner(T, Tq)*dx - (1/dt)*inner(T_prev,Tq)*dx + theta*a1 + (1-theta)*a0
+                else:
+                    F = theta*a(T,Tq) + (1-theta)*a(T_prev,Tq)
+                F = F * Constant(capacity)
+
             else:
+                if self.dimension == 2:
+                    alpha = Constant(5.0)  # default 5 for 2D, but it needs to be higher for 3D case
+                else:
+                    alpha = Constant(500)
                 v = Tq
                 phi = T
                 kappa = diffusivity
                 # ( dot(v, n) + |dot(v, n)| )/2.0
-                vel_n = (dot(velocity, n) + abs(dot(velocity, n)))/2.0
+
 
                 # Bilinear form
                 a_int = dot(grad(v), kappa*grad(phi) - velocity*phi)*dx
@@ -114,12 +136,14 @@ class ScalerTransportDGSolver(ScalerTransportSolver):
                 a_vel = dot(jump(v), vel_n('+')*phi('+') - vel_n('-')*phi('-') )*dS  + dot(v, vel_n*phi)*ds
 
                 F = (a_int + a_fac + a_vel) * Constant(capacity)
-                if integrals_N:
-                    print("integrals_N", integrals_N)
-                    F -= sum(integrals_N)  # FIXME: DG may need distinct newmann boundary flux
-                # Linear form
-                if self.body_source:
-                    F -= v * self.body_source * dx
+
+
+            if integrals_N:
+                print("integrals_N", integrals_N)
+                F -= sum(integrals_N)  # FIXME: DG may need distinct newmann boundary flux
+            # Linear form
+            if self.body_source:
+                F -= v * self.body_source * dx
             return F
 
         if not hasattr(self, 'convective_velocity'):  # if velocity is not directly assigned to the solver
@@ -132,13 +156,15 @@ class ScalerTransportDGSolver(ScalerTransportSolver):
             F = F_convective()
             print('Discrete Galerkin method only solver advection-diffusion scaler equation')
         else:
-            F = F_static(T, Tq)
+            F = None
             print('Discrete Galerkin method only solver diffusion only scaler equation')
 
         return F, bcs
 
-    def solve_static(self, F, T_current, bcs):
+    def solve_form(self, F, T_current, bcs):
+        self.solve_linear_problem(F, T_current, bcs)
         # Project solution to a continuous function space
+        """
         a, L = lhs(F), rhs(F)
         A = assemble(a)
         b = assemble(L)
@@ -147,5 +173,6 @@ class ScalerTransportDGSolver(ScalerTransportSolver):
 
         # Solve system
         solve(A, T_current.vector(), b)
+        """
         up = project(T_current, V=self.function_space_CG)
         return up

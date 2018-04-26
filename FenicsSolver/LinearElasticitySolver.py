@@ -20,6 +20,25 @@
 # *                                                                         *
 # ***************************************************************************
 
+""" 
+Features:
+- transient: support very slow boundary change, Elastostatics
+- thermal stress are implemented but with very basic example
+- modal analysis, not tested yet
+- boundary conditions: see member funtion `update_boundary_conditions()`
+- support 2D and 3D with nullspace accel
+
+Todo:
+- Elastodynamics - vibration, not yet implemented
+- point source, as nodal constraint,  is not supported yet
+- contact/frictional boundary condition, not yet implemented
+- nonhomogenous meterial property like elastic modulus, not yet tested
+- anisotropy needs rank 4 tensor, not yet tested
+
+plasticity will be implemented in PlasticitySolver,
+and other nonliearity by NonlinearElasticitySolver
+"""
+
 from __future__ import print_function, division
 import math
 import collections
@@ -32,37 +51,10 @@ from dolfin import *
 
 from .SolverBase import SolverBase, SolverError
 class LinearElasticitySolver(SolverBase):
-    """ features:
-    # transient: support very slow boundary change, Elastostatics
-    # thermal stress are implemented but with very basic example
-    # modal analysis, not tested yet
-    # boundary conditions: see member funtion `update_boundary_conditions()`
-    # support 2D and 3D with nullspace accel
-    todo:
-    # Elastodynamics - the wave equation
-    # point source, as nodal constraint,  is not supported yet
-    # contact/frictional boundary condition
-    # nonhomogenous meterial, anisotropy need rank 4 tensor, not yet tested
-    plasticity will be implemented in PlasticitySolver,
-    and other nonliearity by NonlinearElasticitySolver
-    """
+
     def __init__(self, case_settings):
         case_settings['vector_name'] = 'displacement'
         SolverBase.__init__(self, case_settings)
-
-        """
-        # this code is not necessary now
-        if self.body_source:
-            self.body_source = self.translate_value(self.body_source)
-        else:
-            if self.dimension == 3:
-                self.body_source = Constant((0, 0, 0))
-            elif self.dimension == 2:
-                self.body_source = Constant((0, 0))
-            else:
-                self.body_source = Constant(0)
-        """
-
         # solver specific setting
         self.solving_modal = False
 
@@ -122,6 +114,7 @@ class LinearElasticitySolver(SolverBase):
         for name, bc_settings in self.boundary_conditions.items():
             i = bc_settings['boundary_id']
             bc = self.get_boundary_variable(bc_settings)
+
             print(bc)
             if bc['type'] =='Dirichlet' or bc['type'] =='displacement':
                 bv = bc['value']  # translate_value() is not supported
@@ -147,13 +140,17 @@ class LinearElasticitySolver(SolverBase):
                 else:
                     direction_vector = mesh_normal
                 integrals_N.append(dot(self.get_flux(u, direction_vector*g), v)*ds(i))
-            elif bc['type'] == 'stress':  # normal to boundary surface, or by a given direction vector
+            elif bc['type'] == 'pressure':
+                # normal to boundary surface, or by a given direction vector
                 if 'direction' in bc and bc['direction']:
                     direction_vector = bc['direction']
                 else:
                     direction_vector = mesh_normal  
                 g = direction_vector * self.translate_value(bc['value'])
                 #FIXME: assuming all force are normal to mesh boundary
+                integrals_N.append(dot(self.get_flux(u, g),v)*ds(i))
+            elif bc['type'] == 'coupling' or bc['type'] == 'stress':
+                g = self.translate_value(bc['value'])
                 integrals_N.append(dot(self.get_flux(u, g),v)*ds(i))
             elif bc['type'] == 'Neumann':  # Neumann is the strain: du/dx then how to make a surface stress?
                 raise SolverError('Neumann boundary type`{}` is not supported'.format(bc['type']))

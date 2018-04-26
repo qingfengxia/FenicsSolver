@@ -261,13 +261,13 @@ class ScalerTransportSolver(SolverBase):
         if bs_items:
             F -= sum(bs_items)
 
-        using_mass_conservation = False  # not well tested, Nitsche boundary
+        using_mass_conservation = False # not well tested, Nitsche boundary
         if using_mass_conservation:
             print('mass conservation compensation for zero mass flux on the curved boundary')
             sigma = Constant(2) # penalty parameter
             #he = self.mesh.ufl_cell().max_facet_edge_length,    T - Constant(300)
-            F -= inner(dot(velocity, normal), (T - Constant(300)))*Tq*capacity*ds(1)  # (1.0/ h**sigma) *
-            #F -= dot(dot(velocity, normal), T)*capacity*ds
+            #F -= inner(dot(velocity, normal), dot(grad(T), normal))*Tq*capacity*ds  # (1.0/ h**sigma) *
+            F += dot(dot(velocity, normal), T)*capacity*ds
 
         #print(F)
         if self.scaler_name == "temperature":
