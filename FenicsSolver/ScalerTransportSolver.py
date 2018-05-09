@@ -60,12 +60,17 @@ class ScalerTransportSolver(SolverBase):
             self.scaler_name = "temperature"
         self.using_diffusion_form = False  # diffusion form is simple in math, but not easy to deal with nonlinear material property
 
+        self.nonlinear = False
+        for v in self.material.values():
+            if callable(v):  # fixedme: if other material properties are functions, it will be regarded as nonlinear
+                self.nonlinear = True
+
         if self.scaler_name == "eletric_potential":
             assert self.settings['transient_settings']['transient'] == False
         #delay the convective velocity and radiation setting detection in geneate_form()
 
-    def capacity(self):
-        # to calc diffusion coeff : conductivity/capacity, it must be number only
+    def capacity(self, T=None):
+        # to calc diffusion coeff : conductivity/capacity, it must be number only for 
         if 'capacity' in self.material:
             c = self.material['capacity']
         # if not found, calc it, otherwise, it is 
@@ -77,9 +82,11 @@ class ScalerTransportSolver(SolverBase):
             c = 1
         else:
             raise SolverError('material capacity property is not found for {}'.format(self.scaler_name))
-        return self.get_material_value(c)  # to deal with nonlinear material
+        if callable(c):
+            return c(T)
+        return self.get_material_value(c)  # todo: deal with nonlinear material
 
-    def diffusivity(self):
+    def diffusivity(self, T=None):
         if 'diffusivity' in self.material:
             c = self.material['diffusivity']
         elif self.scaler_name == "temperature":
@@ -90,9 +97,12 @@ class ScalerTransportSolver(SolverBase):
             c = self.material['diffusivity']
         else:
             raise SolverError('conductivity material property is not found for {}'.format(self.scaler_name))
-        return self.get_material_value(c)  # to deal with nonlinear material
+        if callable(c):
+            return c(T)
+        return self.get_material_value(c)  # todo: deal with nonlinear material
 
-    def conductivity(self):
+    def conductivity(self, T=None):
+        # TODO: nonlinear material:  c = function(T)
         if 'conductivity' in self.material:
             c = self.material['conductivity']
         elif self.scaler_name == "temperature":
@@ -103,15 +113,20 @@ class ScalerTransportSolver(SolverBase):
             c = self.material['diffusivity']
         else:
             c = self.diffusivity() * self.capacity()
-        return self.get_material_value(c)  # to deal with nonlinear material
+        if callable(c):
+            return c(T)
+        return self.get_material_value(c)  # todo: deal with nonlinear material
 
     def get_convective_velocity_function(self, convective_velocity):
-        #
-        self.vector_function_space = VectorFunctionSpace(self.mesh, 'CG', self.degree+1)
-        vel = self.translate_value(convective_velocity, self.vector_function_space)
-        #print('type of convective_velocity', type(convective_velocity), type(vel))
-        #print("vel.ufl_shape", vel.ufl_shape)
-        return vel
+        import ufl.tensors  # used in coupled NS and energy form
+        if isinstance(convective_velocity, ufl.tensors.ListTensor):
+            return convective_velocity
+        else:
+            self.vector_function_space = VectorFunctionSpace(self.mesh, 'CG', self.settings['fe_degree']+1)
+            vel = self.translate_value(convective_velocity, self.vector_function_space)
+            #print('type of convective_velocity', type(convective_velocity), type(vel))
+            #print("vel.ufl_shape", vel.ufl_shape)
+            return vel
 
     def update_boundary_conditions(self, time_iter_, T, Tq, ds):
         # test_function is removed from integrals_N items, so SPUG residual can include boundary condition
@@ -134,7 +149,7 @@ class ScalerTransportSolver(SolverBase):
 
         for name, bc_settings in self.boundary_conditions.items():
             i = bc_settings['boundary_id']
-            bc = self.get_boundary_variable(bc_settings)
+            bc = self.get_boundary_variable(bc_settings)  # should deal with 'value' and 'values = []'
 
             if bc['type'] == 'Dirichlet' or bc['type'] == 'fixedValue':
                 T_bc = self.translate_value(bc['value'])
@@ -179,7 +194,7 @@ class ScalerTransportSolver(SolverBase):
 
     def get_body_source_items(self, time_iter_, T, Tq, dx):
         bs = self.get_body_source()  # defined in base solver, has already translated value
-        print(bs)
+        print("body source: ", bs)
         if bs and isinstance(bs, dict):
             S = []
             for k,v in bs.items():
@@ -199,9 +214,9 @@ class ScalerTransportSolver(SolverBase):
         dx= Measure("dx", subdomain_data=self.subdomains)  # cells
         ds= Measure("ds", subdomain_data=self.boundary_facets)
 
-        conductivity = self.conductivity() # constant, experssion or tensor
-        capacity = self.capacity()  # density * specific capacity -> volumetrical capacity
-        diffusivity = self.diffusivity()  # diffusivity
+        conductivity = self.conductivity(T) # constant, experssion or tensor
+        capacity = self.capacity(T)  # density * specific capacity -> volumetrical capacity
+        diffusivity = self.diffusivity(T)  # diffusivity
         #print(conductivity, capacity, diffusivity)
 
         # detection here, to deal with assigned velocity after solver intialization
@@ -281,9 +296,12 @@ class ScalerTransportSolver(SolverBase):
 
             if self.has_radiation:
                 #print(m_, radiation_flux, F)
+                self.nonlinear = True
                 F -= self.radiation_flux(T)*Tq*ds # for all surface, without considering view angle
-                F = action(F, T_current)  # API 1.0 still working ; newer API , replacing TrialFunction with Function for nonlinear 
-                self.J = derivative(F, T_current, T)  # Gateaux derivative
+        
+        if self.nonlinear:
+            F = action(F, T_current)  # API 1.0 still working ; newer API , replacing TrialFunction with Function for nonlinear 
+            self.J = derivative(F, T_current, T)  # Gateaux derivative
 
         return F, bcs
 
@@ -302,11 +320,11 @@ class ScalerTransportSolver(SolverBase):
 
             m_ = emissivity * Stefan_constant
             radiation_flux = m_*(T_ambient_radiaton**4 - pow(T, 4))  # it is nonlinear item
-            return adiation_flux
+            return radiation_flux
 
     def solve_form(self, F, T_current, bcs):
-        if self.scaler_name == "temperature" and self.has_radiation:
-            print('solving radiation by nonlinear solver')
+        if self.nonlinear:
+            print('solving by nonlinear solver')
             return self.solve_nonlinear_problem(F, T_current, bcs, self.J)
         else:
             return self.solve_linear_problem(F, T_current, bcs)

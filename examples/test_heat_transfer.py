@@ -25,8 +25,10 @@ import math
 import numpy as np
 
 from dolfin import *
-
 from FenicsSolver.ScalerTransportSolver  import ScalerTransportSolver
+
+from config import is_interactive
+interactively = is_interactive()
 
 #mesh = UnitCubeMesh(20, 20, 20)
 mesh = UnitSquareMesh(40, 40)
@@ -45,7 +47,12 @@ right = AutoSubDomain(lambda x: near(x[0],cx_max))
 T_hot = 360
 T_cold = 300
 T_ambient = 300
-conductivity = 0.6
+
+nonlinear = True
+if nonlinear:
+    conductivity = 0.6
+else:
+    conductivity = lambda T: (T-T_ambient)/T_ambient * 0.6
 length = cy_max - cy_min
 heat_flux = (T_hot-T_cold)/length*conductivity  # divided by length scale which is unity 1 ->  heat flux W/m^2
 
@@ -126,7 +133,7 @@ c.c22 = c22
 K = as_matrix(((c[0], c[1]), (c[1], c[2])))
 """
 
-def setup(using_anisotropic_conductivity, using_convective_velocity, using_DG_solver, using_HTC, interactively):
+def setup(using_anisotropic_conductivity, using_convective_velocity, using_DG_solver, using_HTC):
 
     if using_anisotropic_conductivity:
         #tensor-weighted-poisson/python/demo_tensor-weighted-poisson.py
@@ -184,7 +191,7 @@ def post_process(T, interactively):
     if interactively:
         interactive()
 
-def test_radiation(interactively):
+def test_radiation():
     using_anisotropic_conductivity = False
     if using_anisotropic_conductivity:
         #tensor-weighted-poisson/python/demo_tensor-weighted-poisson.py
@@ -207,12 +214,12 @@ def test_radiation(interactively):
     T = solver.solve()
     post_process(T, interactively)
 
-def test(interactively = True):
-    #setup(using_anisotropic_conductivity = True, using_convective_velocity = False, using_DG_solver = False, using_HTC = False, interactively=interactively)
-    #setup(using_anisotropic_conductivity = False, using_convective_velocity = False, using_DG_solver = False, using_HTC = True, interactively = interactively)
+def test():
+    #setup(using_anisotropic_conductivity = True, using_convective_velocity = False, using_DG_solver = False, using_HTC = False)
+    #setup(using_anisotropic_conductivity = False, using_convective_velocity = False, using_DG_solver = False, using_HTC = True)
     #DG is not test here
-    setup(using_anisotropic_conductivity = False, using_convective_velocity = True, using_DG_solver = True, using_HTC = True, interactively = interactively)
-    test_radiation(True)
+    setup(using_anisotropic_conductivity = False, using_convective_velocity = True, using_DG_solver = True, using_HTC = True)
 
 if __name__ == '__main__':
     test()
+    test_radiation()
