@@ -24,11 +24,14 @@
 
 from __future__ import print_function, division
 import math
+import copy
 import numpy as np
 
 from dolfin import *
+from FenicsSolver import SolverBase
 
-is_interactive = True
+from config import is_interactive
+interactively = is_interactive()
 
 transient = False
 T_ambient =300
@@ -126,13 +129,12 @@ def setup(using_elbow = True, using_3D = False, compressible=False):
     for k in bcs_u:
         bcs[k] = bcs_u[k]
 
-    import copy
-    from FenicsSolver import SolverBase
     s = copy.copy(SolverBase.default_case_settings)
     s['mesh'] = mesh
     print(info(mesh))
     s['boundary_conditions'] = bcs
     s['initial_values'] = {'velocity': _init_vel, "temperature": T_ambient, "pressure": 1e5}
+    s['solver_settings']['reference_values'] = {'velocity': (1, 1), "temperature": T_ambient, "pressure": 1e5}
 
     return s
 
@@ -145,11 +147,13 @@ def test_compressible():
     solver = CompressibleNSSolver.CompressibleNSSolver(s)  # set a very large viscosity for the large inlet width
     #solver.init_values = Expression(('1', '0', '1e-5'), degree=1)
     u,p, T= split(solver.solve())
-    solver.plot()
+    if interactively:
+        solver.plot()
 
-def test_incompressible(using_elbow = True):
+def test_incompressible(using_elbow = True, coupling_energy_equation = True):
     s = setup(using_elbow, using_3D = False, compressible = False)
-    solving_energy_equation = False
+    #s['solving_temperature'] = coupling_energy_equation
+    Newtonian = False  # nonNewtonian diverges!
 
     if using_elbow:
         Re = 1e-3  # see pressure change,     # stabilization_method seems make no difference
@@ -157,7 +161,8 @@ def test_incompressible(using_elbow = True):
         s['fe_degree'] = 1  # test failed, can not finish JIT
         Re = 10  # mesh is good enough to simulate higher Re
 
-    fluid = {'name': 'oil', 'kinematic_viscosity': (length_scale * max_vel)/Re, 'density': 800}
+    fluid = {'name': 'oil', 'kinematic_viscosity': (length_scale * max_vel)/Re, 'density': 800, 
+                'specific_heat_capacity': 4200, 'thermal_conductivity':  0.1, 'Newtonian': Newtonian}
     s['material'] = fluid
 
     s['advection_settings'] = {'Re': Re, 'stabilization_method': 'G2' , 'kappa1': 4, 'kappa2': 2}
@@ -166,13 +171,17 @@ def test_incompressible(using_elbow = True):
     from FenicsSolver import CoupledNavierStokesSolver
     solver = CoupledNavierStokesSolver.CoupledNavierStokesSolver(s)  # set a very large viscosity for the large inlet width
     #solver.init_values = Expression(('1', '0', '1e-5'), degree=1)
-    u,p= split(solver.solve())
-    if is_interactive:
+    if coupling_energy_equation:
+        u,p,T= split(solver.solve())
+    else:
+        u,p= split(solver.solve())
+
+    if interactively:
         solver.plot()
 
-    if solving_energy_equation:  # not fully tested
-        from FenicsSolver import  ScalerEquationSolver
-        solver_T = ScalerEquationSolver.ScalerEquationSolver(s)
+    if not coupling_energy_equation and False:  # not fully tested
+        from FenicsSolver import  ScalerTransportSolver
+        solver_T = ScalerTransportSolver.ScalerTransportSolver(s)
         #Q = solver.function_space.sub(1)  # seem it is hard to share vel between. u is vectorFunction
         Q = solver_T.function_space
         cvel = VectorFunction(Q)
@@ -183,8 +192,7 @@ def test_incompressible(using_elbow = True):
 
 if __name__ == '__main__':
     test_incompressible()
-    test_incompressible(False)
-    is_interactive = True
+    #test_incompressible(False, False)  # driven cavity failed
 
     # manually call test function,  if discovered by google test, it will not plot in interactive mode
     #test_incompressible(False, True)  # Elbow 3D is slow but possible
