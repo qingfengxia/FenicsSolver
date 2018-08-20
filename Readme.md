@@ -29,6 +29,7 @@ A set of multi-physics FEM solvers based on Fenics with GUI support(via integrat
 
 + coupling of above solvers
   - flow-structure interaction
+  - thermal, chemical, electrical, structure process of Lithium battery (yet complete)
 
 + Coupling to external solvers: turbulent flow and multiphase flow will be implemented by coupled to external CFD solver, OpenFOAM.
 
@@ -58,7 +59,7 @@ Run the python script files with "test_" suffix, which are gtest compatible.
 
 ## Roadmap and progress
 
-see also my presentation at Fenics 18: ![Automated Mechanical Engineering Design using Open Source CAE Software Packages](doc/Fenics18 PPT qingfeng Xia automated CAE.pdf)
+see also my presentation at Fenics 18: [Automated Mechanical Engineering Design using Open Source CAE Software Packages]("doc/Fenics18 PPT qingfeng Xia automated CAE.pdf")
 
 ### 1. Initial demonstration (Sep 2017)
 
@@ -73,13 +74,19 @@ Case setup: json file format is the text case setup file, mapping directly to an
 Meanwhile, FreeCAD developer *joha2* has added mesh export function in FemWorkbench, once the boundary mesh can be exported, case setup for fenics solver will be write in FreeCAD workbench.
 
 
-### 3. Coupling of multiple solvers in series (planned in late 2018)
+### 3. Coupling of multiple solvers (planned in late 2018)
 
-Not yet designed.
+Fluid-structure interaction coupling has a initial implementation in segregate coupling mode, see engine seal FSI simulation (will be uploaded soon)
+
+Tight coupling of all physical fields is under design, target on Lithium ion Battery thermal modelling.
 
 ### 4. Coupling with external solvers OpenFOAM
 
-VTK could the data exchange format. 
+VTK is the data exchange format for one-way coupling from OpenFOAM to FenicsSolver, from Foam to VTK and VTK to Foam (mesh and internal field data files)
+Two-way coupling should be implemented with the multiphysics coupling library [preCICE](https://github.com/precice/precice)
+
+a video/presentation of my 13th OpenFOAM workshop presentation can be found here:
+[Coupling OpenFOAM with FeniCS for multiphysis simulation](https://www.iesensor.com/blog/2018/06/25/coupling-openfoam-with-fenics-for-multiphysis-simulation-openfoam-workshop-13-presentation/)
 
 
 ## Acknowledgement
