@@ -59,7 +59,7 @@ Run the python script files with "test_" suffix, which are gtest compatible.
 
 ## Roadmap and progress
 
-see also my presentation at Fenics 18: [Automated Mechanical Engineering Design using Open Source CAE Software Packages]("doc/Fenics18 PPT qingfeng Xia automated CAE.pdf")
+see also my presentation at Fenics 18: [Automated Mechanical Engineering Design using Open Source CAE Software Packages]("doc/Fenics18_Xia.pdf")
 
 ### 1. Initial demonstration (Sep 2017)
 
@@ -76,7 +76,8 @@ Meanwhile, FreeCAD developer *joha2* has added mesh export function in FemWorkbe
 
 ### 3. Coupling of multiple solvers (planned in late 2018)
 
-Fluid-structure interaction coupling has a initial implementation in segregate coupling mode, see engine seal FSI simulation (will be uploaded soon)
+Fluid-structure interaction coupling has a initial implementation in segregate coupling mode, see engine seal FSI simulation:
+[2D FSI simulation of labyrinth seal]("doc/fsi_velmag.pdf")
 
 Tight coupling of all physical fields is under design, target on Lithium ion Battery thermal modelling.
 

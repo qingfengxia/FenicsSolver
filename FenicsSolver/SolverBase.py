@@ -61,9 +61,9 @@ from dolfin import *
 class SolverError(Exception):
     pass
 
-default_report_settings  = {"logging_level":logging.DEBUG,  "logging_file": None,
-                            "plotting_freq": 10, 'plotting_interactive': True, 
-                            'saved_filename': None}
+default_report_settings  = {"logging_level": logging.DEBUG,  "logging_file": None,
+                            "plotting_freq": 10, 'plotting_interactive': True, 'plotting_file': None,
+                            'saving_freq': 10, 'result_filename': None}
 
 # directly mapping to solver.parameters of Fenics
 default_solver_parameters = {"relative_tolerance": 1e-5,
@@ -71,7 +71,7 @@ default_solver_parameters = {"relative_tolerance": 1e-5,
                              "monitor_convergence": True,  # print to console
                              }
 default_case_settings = {'solver_name': None,
-                'case_name': 'test', 'case_folder': "./",  'case_file': None,
+                'case_name': 'test', 'case_folder': "./",  'case_file': None,  # if used by GUI tool, may be removed later
                 'mesh':  None, 'fe_degree': 1, 'fe_family': "CG",
                 'function_space': None, 'periodic_boundary': None, 
                 'boundary_conditions': None, # OrderedDict
@@ -112,8 +112,10 @@ class SolverBase():
         pp.pprint(self.settings)
 
     def load_settings(self, s):
+        if 'periodic_boundary' not in s:  # check: settings file can not store None element?
+            s['periodic_boundary'] = None
         ## mesh and boundary
-        self.boundary_conditions = s['boundary_conditions']
+        self.boundary_conditions = s['boundary_conditions']  # used by generate_boundary_facets()
         if ('mesh' in s) and s['mesh']:
             if isinstance(s['mesh'], (str, unicode)):
                 self.read_mesh(s['mesh'])  # it also read boundary
@@ -122,20 +124,16 @@ class SolverBase():
                 self.generate_boundary_facets()
             else:
                 raise SolverError('Error: mesh must be file path or Mesh object: {}')
-            if 'fe_family' in s:
-                self.family = s['fe_family']
-            else:
-                self.family = 'CG'
-            if 'fe_degree' in s:
-                self.degree = s['fe_degree']
-            else:
-                self.degree = 1
-            if 'periodic_boundary' not in s:  # check: settings file can not store None element?
-                s['periodic_boundary'] = None
+            if not 'fe_family' in s:
+                s['fe_family'] = 'CG'
+            if  not 'fe_degree' in s:
+                s['fe_degree'] = 1
             self.generate_function_space(s['periodic_boundary'])
         elif ('mesh' not in s or s['mesh']==None) and ('function_space' in s and s['function_space']):
             self.function_space = s['function_space']
-            self.degree = self.function_space._ufl_element.degree()
+            s['fe_degree']  = self.function_space._ufl_element.degree()
+            if not 'fe_family' in s:
+                s['fe_family'] = 'CG'  # auto detect? 
             self.mesh = self.function_space.mesh()
             self.generate_boundary_facets()
             self.is_mixed_function_space = False
@@ -143,9 +141,8 @@ class SolverBase():
             raise SolverError('mesh or function space must specified to construct solver object')
         self.dimension = self.mesh.geometry().dim()
 
-        if not hasattr(self, 'subdomains'):
+        if not hasattr(self, 'subdomains'):  # useful to set nulti-region material and body_source
             self.subdomains = MeshFunction("size_t", self.mesh, self.dimension)
-
         ##
         if 'body_source' in s and s['body_source']:
             self.body_source = s['body_source']
@@ -252,16 +249,16 @@ class SolverBase():
         self.is_mixed_function_space = False  # todo: how to detect it is mixed?
         if "scaler_name" in self.settings:
             if periodic_boundary:
-                self.function_space = FunctionSpace(self.mesh, self.family, self.degree, constrained_domain=periodic_boundary)
+                self.function_space = FunctionSpace(self.mesh, self.settings['fe_family'], self.settings['fe_degree'], constrained_domain=periodic_boundary)
                 # the group and degree of the FE element.
             else:
-                self.function_space = FunctionSpace(self.mesh, self.family, self.degree)
+                self.function_space = FunctionSpace(self.mesh, self.settings['fe_family'], self.settings['fe_degree'])
         elif "vector_name" in self.settings:
             if periodic_boundary:
-                self.function_space = VectorFunctionSpace(self.mesh, self.family, self.degree, constrained_domain=periodic_boundary)
+                self.function_space = VectorFunctionSpace(self.mesh, self.settings['fe_family'], self.settings['fe_degree'], constrained_domain=periodic_boundary)
                 # the group and degree of the FE element.
             else:
-                self.function_space = VectorFunctionSpace(self.mesh, self.family, self.degree)
+                self.function_space = VectorFunctionSpace(self.mesh, self.settings['fe_family'], self.settings['fe_degree'])
         else:
             raise SolverError('only scaler or vector solver has a base method of generate_function_space()')
 
@@ -278,7 +275,9 @@ class SolverBase():
         if not self.initial_values:
             #if isinstance(self.function_space, (VectorFunctionSpace,)):
             if self.is_mixed_function_space:
-                return Function(self.function_space)  # it is not default to zero
+                u0 = Function(self.function_space)
+                u0.vector()[:] = 0.0 # default to zero
+                return u0
             elif 'vector_name' in self.settings:
                 v0 = (0, 0, 0)[:self.dimension]
             elif 'scaler_name' in self.settings:
@@ -296,10 +295,10 @@ class SolverBase():
                 raise SolverError('only vector and scaler function can run this method')
 
         if 'vector_name' in self.settings and isinstance(v0[0], (str, numbers.Number)):
-            _initial_values_expr = Expression( tuple([str(v) for v in v0]), degree = self.degree)
+            _initial_values_expr = Expression( tuple([str(v) for v in v0]), degree = self.settings['fe_degree'])
             u0 = interpolate(_initial_values_expr, self.function_space)
         elif 'scaler_name' in self.settings and isinstance(v0, (str, numbers.Number)):
-            _initial_values_expr = Expression(str(v0), degree = self.degree)
+            _initial_values_expr = Expression(str(v0), degree = self.settings['fe_degree'])
             u0 = interpolate(_initial_values_expr, self.function_space)
         elif isinstance(v0, (Function,)):
             try:
@@ -327,7 +326,7 @@ class SolverBase():
 
     def _translate_dict_value_to_function(self, value):
         """ body source, initial value or material for multiple subdomains 
-        dict input format: {'region1': {'subdomain_id': 1, 'value': 1}, ...}
+        dict input format: {'region1': {'subdomain_id': 1, 'material': metal_material}, ...}
         for performance reason, numpy array is operated directly, or cpp expression
         """
         v0 = Function(self.function_space)
@@ -337,7 +336,7 @@ class SolverBase():
 
     def translate_value(self, value, function_space = None):
         # for both internal and boundary values
-        _degree = self.degree
+        _degree = self.settings['fe_degree']
         if function_space:
             W = function_space
         else:
@@ -363,7 +362,7 @@ class SolverBase():
             # FIXME can not interpolate an expression, not necessary?
             values_0 = value  # interpolate(value, W)
         elif callable(value) and self.transient_settings['transient']:  # Function is also callable
-            values_0 = Constant(value(self.current_time))
+            values_0 = Constant(value(self.get_current_time()))
         elif isinstance(value, (str, )):  # file or string expression
             if os.path.exists(value):
                 # also possible continue from existent solution, or interpolate from diff mesh density
@@ -390,19 +389,22 @@ class SolverBase():
             return 'unknown'
 
     def get_boundary_variable(self, bc, variable=None):
-        if 'values' in bc:  # new style, boundary contains a 'values' dict
-            if not variable:
-                variable = self.get_variable_name()
+        if not variable:
+            variable = self.get_variable_name()
+        #print('variable = ', variable)
+        if 'values' in bc and variable in bc['values']:  # new style, boundary contains a 'values' list
             bvariable = bc['values'][variable]
         else:
             bvariable = bc
         return bvariable
 
     def get_boundary_value(self, bc, variable=None):
-        if 'values' in bc:  # new style, boundary contains a 'values' dict
+        if 'values' in bc:  # new style, boundary contains a 'values' list
             if not variable:
                 variable = self.get_variable_name()
-            bvalue = bc['values'][variable]['value']
+            for vbc in bc['values']:
+                if vbc['variable'] == variable:
+                    bvalue = vbc['value']
         else:
             bvalue = bc['value']
         return translate_value(bvalue)
@@ -432,7 +434,10 @@ class SolverBase():
         #self.mesh.hmin()  # Compute minimum cell diameter. courant number
         return dt
 
-    def get_current_time(self, time_iter_):
+    def get_current_time(self, time_iter_=None):
+        if not time_iter_:
+            time_iter_ = self.current_step
+        #self.current_time
         try:
             dt = float(self.transient_settings['time_step'])
             tp = self.transient_settings['starting_time'] + dt * (time_iter_ - 1)
@@ -443,22 +448,26 @@ class SolverBase():
                 print('time point can only be a sequence of time series or derived from constant time step')
         return tp
 
-    def solve_current_step(self, trial_function, test_function, up_current, up_prev):
+    def init_solver(self):
+        self.trial_function = TrialFunction(self.function_space)
+        self.test_function = TestFunction(self.function_space)
+        # Define functions for transient loop
+        self.w_current = self.get_initial_field()  # init to default or user provided constant
+        self.w_prev = Function(self.function_space)
+        self.w_prev.assign(self.w_current)
+
+    def solve_current_step(self):
         # only NS equation needs current value to build form
-        F, Dirichlet_bcs_up = self.generate_form(self.current_step, trial_function, test_function, up_current, up_prev)
-        up_prev.assign(up_current)
-        up_current = self.solve_form(F, up_current, Dirichlet_bcs_up)  # solve for each time step, up_prev tis not needed
+        F, Dirichlet_bcs_up = self.generate_form(self.current_step, self.trial_function, self.test_function, self.w_current, self.w_prev)
+        self.w_prev.assign(self.w_current)
+        self.w_current = self.solve_form(F, self.w_current, Dirichlet_bcs_up)  # solve for each time step, up_prev tis not needed
+        self.result = self.w_current
 
     def solve_transient(self):
         #
-        trial_function = TrialFunction(self.function_space)
-        test_function = TestFunction(self.function_space)
-        # Define functions for transient loop
-        u_current = self.get_initial_field()  # init to default or user provided constant
-        u_prev = Function(self.function_space)
-        u_prev.assign(u_current)
-        ts = self.transient_settings
+        self.init_solver()
 
+        ts = self.transient_settings
         # Define a parameters for a stationary loop
         self.current_time = ts['starting_time']
         self.current_step = 0
@@ -466,6 +475,13 @@ class SolverBase():
             t_end = ts['ending_time']
         else:
             t_end = self.current_time+ 1
+
+        sf = self.report_settings['saving_freq']
+        if sf and sf>0:
+            if 'result_filename' in self.report_settings and self.report_settings['result_filename']:
+                result_filename = self.report_settings['result_filename']
+            else:
+                result_filename = 'result_file.pvd'  # default filename
 
         #print(ts, self.current_time, t_end)
         # Transient loop also works for steady, by set `t_end = self.time_step`
@@ -478,13 +494,18 @@ class SolverBase():
                 dt = 1
 
             ## overloaded by derived classes, maybe move out of temporal loop if boundary does not change form
-            self.solve_current_step(trial_function, test_function, u_current, u_prev)
+            self.solve_current_step()
 
-            print("Current time = ", self.current_time, " TimerSolveAll = ", timer_solver_all.elapsed())
+            print("Current step = ", self.current_step, "time = ", self.current_time, " TimerSolveAll = ", timer_solver_all.elapsed())
             pf = self.report_settings['plotting_freq']
-            if pf>0 and self.current_step> 0 and (self.current_step % pf == 0) and (not self.is_mixed_function_space):
-                plot(u_current, title = "Value at time: " + str(self.current_time))
+            if pf>0 and self.current_step> 0 and (self.current_step % pf == 0):
+                self.plot()
             # stop for steady case, or update time
+
+            if sf and sf>0:
+                if self.current_step > 0 and (self.current_step % sf == 0):
+                    self.save(result_filename)  # 
+                    print("save data to file `{}` at step: {} , at time: {}". format(result_filename, self.current_time))
             if not self.transient_settings['transient']:
                 break
             self.current_step += 1
@@ -492,29 +513,49 @@ class SolverBase():
         ## end of time loop
         timer_solver_all.stop()
 
-        if 'saved_filename' in self.report_settings and self.report_settings['saved_filename']:
-            result_file = File(self.report_settings['saved_filename'])  #XDMFFile is preferred for parallel IO
-            result_file << u_current
-
-        return u_current
+        return self.w_current
 
     def solve(self):
         self.result = self.solve_transient()
         return self.result
 
     def plot(self):
-        if not self.is_mixed_function_space:
-            plot(self.result)
-        else:
-            self.plot_result()
-
         ver = dolfin.dolfin_version().split('.')
         #if self.report_settings['plotting_interactive']:
         if int(ver[0]) <= 2017 and int(ver[1])<2:
-            interactive()  # using VTK
+            self.using_matplotlib = False  # using VTK
+        else:
+            self.using_matplotlib = True
+        if not self.is_mixed_function_space:
+            plot(self.result)  # title = "Value at time: " + str(self.current_time)
+        else:
+            self.plot_result()
+
+        if not self.using_matplotlib:
+            interactive()  
         else:
             import matplotlib.pyplot as plt
             plt.show()
+
+    def save(self, result_filename):
+        #currently support only pvd, this format support parallel IO
+        #XDMFFile is preferred for parallel IO, checkpoint
+        #how to deal with DG and higher order element? velocity of NS has order 2
+        if (not self.is_mixed_function_space):
+            result_stream = File(result_filename)
+            result_stream << self.w_current
+        else:
+            # write all var into one pvd is possible as multiblock dataset
+            suffix = '.pvd'
+            assert result_filename[-4:] == '.pvd'
+            result_filename_root = result_filename[:-4]
+            ret = split(self.result)
+            for i, var in enumerate(ret):
+                var_name = self.settings['mixed_variable'][i]
+                var.rename(var_name, "label")  # why renaming does not show in vtu file?
+                var_result_filename = result_filename_root + '_' + var_name + suffix
+                result_stream = File(var_result_filename)
+                result_stream << var
 
     ####################################
     def solve_linear_problem(self, F, u, Dirichlet_bcs):
@@ -558,9 +599,10 @@ class SolverBase():
         #parameters["form_compiler"]["representation"] = "quadrature"
         parameters["form_compiler"]["optimize"] = True
 
-        for key in self.solver_settings['solver_parameters']:
-            if key in solver.parameters:
-                solver.parameters[key] = self.solver_settings['solver_parameters'][key]
+        if 'solver_parameters' in self.solver_settings:
+            for key in self.solver_settings['solver_parameters']:
+                if key in solver.parameters:
+                    solver.parameters[key] = self.solver_settings['solver_parameters'][key]
 
     def solve_amg(self, F, u, bcs):
         A, b = assemble_system(lhs(F), rhs(F), bcs)
