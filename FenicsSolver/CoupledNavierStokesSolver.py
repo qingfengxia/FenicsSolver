@@ -55,7 +55,7 @@ reference_frame_settings = {'type': 'SRF',  'center_point': (0, 0, 0), 'omega': 
 
 3. turbulent flow: Oasis: a high-level/high-performance open source Navier-Stokes solve
 
-4. nonlinear viscosity model, nu(T), nu(U, p, T)
+4. nonlinear viscosity model, nu(T), nu(U, p, T), diverging !
 """
 
 from .SolverBase import SolverBase
@@ -84,9 +84,9 @@ class CoupledNavierStokesSolver(SolverBase):
         self.vel_degree = self.settings['fe_degree'] + 1  # order 3 is working for 2D elbow testing
         self.pressure_degree = self.settings['fe_degree']
         self.is_mixed_function_space = True  # FIXME: how to detect it is mixed, if function_space is provided
-        self.update_function_space(periodic_boundary)
+        self._update_function_space(periodic_boundary)
 
-    def update_function_space(self, periodic_boundary=None):
+    def _update_function_space(self, periodic_boundary=None):
         V = VectorElement(self.settings['fe_family'], self.mesh.ufl_cell(), self.vel_degree)  # degree 2, must be higher than pressure
         Q = FiniteElement(self.settings['fe_family'], self.mesh.ufl_cell(), self.pressure_degree)
         #T = FiniteElement("CG", self.mesh.ufl_cell(), 1)  # temperature subspace, or just use Q
@@ -98,6 +98,21 @@ class CoupledNavierStokesSolver(SolverBase):
             self.function_space = FunctionSpace(self.mesh, mixed_element, constrained_domain=periodic_boundary)
         else:
             self.function_space = FunctionSpace(self.mesh, mixed_element)
+        self.velocity_subfunction_space = self.function_space.sub(0)
+
+    def update_solver_function_space(self, periodic_boundary=None):
+        #used by FSI solver, after mesh moving
+        self._update_function_space(periodic_boundary)
+
+        self.trial_function = TrialFunction(self.function_space)
+        self.test_function = TestFunction(self.function_space)
+        # Define functions for new function space
+        _w_current =  Function(self.function_space)
+        _w_current.vector()[:] = self.w_current.vector()[:]  # assuming no topo change
+        self.w_current = _w_current
+        _w_prev = Function(self.function_space)  # on previous time-step mesh
+        _w_prev.vector()[:] = self.w_prev.vector()[:]  # assuming no topo change
+        self.w_prev = _w_prev  # 
 
     def get_body_source(self):
         # FIXME: source term type, centrifugal force is possible
@@ -111,7 +126,7 @@ class CoupledNavierStokesSolver(SolverBase):
         return body_force
 
     def get_initial_field(self):
-        # assume:  all constant, velocity is a tupe of constant
+        # assume: velocity is a tupe of constant
         # function assigner is another way, assign(m.sub(0), v0)
         print(self.initial_values)
 
@@ -124,20 +139,27 @@ class CoupledNavierStokesSolver(SolverBase):
         up0 = interpolate(_initial_values_expr, self.function_space)
         return up0
 
-    def viscous_stress(self, u, p):
-        T_space = TensorFunctionSpace(self.function_space.mesh(), 'CG', self.vel_degree)
+    def viscous_stress(self, up, T_space):
+        u, p = split(up)  # TODO:
+        if not T_space:
+            T_space = TensorFunctionSpace(self.function_space.mesh(), 'CG', 1)
         sigma = project(self.viscosity()*(grad(u) + grad(u).T) - p*Identity(self.dimension), T_space, \
             solver_type = 'mumps')
         return sigma
 
-    def boundary_load(self, up, target_space):
-        u, p = split(up)
-        sigma = self.viscous_stress(u, p)  # already included pressure
+    def boundary_traction(self, up, target_space = None):
+        # https://www.openfoam.com/documentation/cpp-guide/html/classFoam_1_1functionObjects_1_1externalCoupled.html#a1063d7a675858ee0e647e36abbefe463
+        sigma = self.viscous_stress(up)  # already included pressure
         n = FacetNormal(self.mesh)
-        # from CellFuncton to FacetFunction
-        bstress = Constant((1e2*self.current_step, 0))  # TODO: tmp bypass for test
-        #interpolate(dot(sigma, n), target_space)  # project does not work
-        return bstress
+        # stress_normal = dot(n, dot(sigma, n))  #scaler, pressure
+        # (tangential stress vector) = dot(sigma, n) - stress_normal*n
+        #traction = dot(sigma, n)  # may need as_vector, can not project?
+        traction = sigma[i,j]*n[j]  # ufl.log.UFLException: Shapes do not match
+        #traction = Constant((1e2*self.current_step, 0))  # TODO: tmp bypass for test
+        #print('before traction project ...')
+        if target_space:
+            traction = interpolate(traction, target_space)  # project does not work
+        return traction
 
     def calc_drag_and_lift(self, u, p, drag_axis_index, lift_axis_index, boundary_index_list):
         # Compute force on cylinder,  axis_index: 0 for x-axis, 1 for y_axis
@@ -156,7 +178,7 @@ class CoupledNavierStokesSolver(SolverBase):
             raise SolverError('Error: boundary_index_list must be specified to calc drag and lift forces')
 
     def viscous_heat(self, u, p):
-        # shear heating,  FIXME: not tested code
+        # shear heating power,  FIXME: not tested code
         V_space = self.function_space.sub(0)
         return project(inner(self.viscosity()*(grad(u) + grad(u).T) - p*Identity(self.dimension), grad(u)) , V_space,
             solver_type = 'mumps', form_compilder_parameters = \
@@ -170,12 +192,12 @@ class CoupledNavierStokesSolver(SolverBase):
             if self.solving_temperature:
                 u,p,T = split(current_w)
                 _nu = self.material['kinematic_viscosity']
-                _nu *= pow(p/Constant(self.reference_values['pressure']), 0.1)
-                _nu *= pow(T/Constant(self.reference_values['temperature']), 0.2)
+                _nu = _nu * (1 + (p/self.reference_values['pressure']) * 0.1)
+                _nu = _nu * (1 - (T/self.reference_values['temperature']) * 0.2)
             else:
                 u,p = split(current_w)
                 _nu = self.material['kinematic_viscosity']
-                _nu *= pow(p/Constant(self.reference_values['pressure']), 0.2)
+                _nu = _nu * pow(p/self.reference_values['pressure'], 0.2)
         else:
             _nu = self.material['kinematic_viscosity']
             #if isinstance(_nu, (Constant, numbers.Number)):
@@ -196,9 +218,9 @@ class CoupledNavierStokesSolver(SolverBase):
 
         ## weak form
         if self.transient:  # temporal scheme
-            F = self.F_static(trial_function, test_function, up_current)
-        else:
             F = self.F_transient(time_iter_, trial_function, test_function, up_current, up_prev)
+        else:
+            F = self.F_static(trial_function, test_function, up_current)
         # added boundary to F_static() or here to make Crank-Nicolson temporal scheme
         Dirichlet_bcs_up, F_bc = self.update_boundary_conditions(time_iter_, trial_function, test_function, ds)
         for it in F_bc:
@@ -240,14 +262,19 @@ class CoupledNavierStokesSolver(SolverBase):
             
             #print('type(u_current)', u_current, type(u_current))  # ufl.tensors.ListTensor
             #print('type(u)', u, type(u))
-            Tsolver.convective_velocity = u
+            Tsolver.convective_velocity = u_current
             #ds should be passed to Tsolver? but they are actually same
             #convection stab can be a problem!
             F_T, T_bc = Tsolver.generate_form(time_iter_, T, Tq, T_current, T_prev)
             #inner() ufl.log.UFLException: Shapes do not match: <Sum id=140066973439888> and <ListTensor id=140066973395664>.
-            viscous_heating = inner(self.viscosity()*(grad(u) + grad(u).T) - p*Identity(self.dimension), grad(u))  # viscous heat
+            tau = self.viscosity()*(grad(u) + grad(u).T) 
+            #sigma = tau- p*Identity(self.dimension)  # u_current for both nonlinear and picard loop
+            epsdot = 0.5 * (grad(u) + grad(u).T)
+            viscous_heating = inner(epsdot, tau)  # method 1
+            #viscous_heating =  2 * self.viscosity(up_current) * tr(dot(epsdot, epsdot))
             print('type of viscous heating:', type(viscous_heating))
-            #F_T -= viscous_heating *Tq*dx
+            ## sigma * u:  heat flux,  sigma * grad(u) heat source
+            #F_T -= viscous_heating *Tq*dx  # need sum to scaler!
             return F_T, T_bc
 
     def F_static(self, trial_function, test_function, up_0):
@@ -270,10 +297,9 @@ class CoupledNavierStokesSolver(SolverBase):
         '''
         advection_velocity = u_0 # u_0 is the current value to be solved for steady case
         nu = self.viscosity(up_0)
-        '''
-        plot(nu, title = 'viscosity')  # all zero
-        interactive()
-        '''
+        #plot(nu, title = 'viscosity')  # all zero
+        #import matplotlib.pyplot as plt
+        #plt.show()
 
         # Define Form for the static Stokes Coupled equation,
         F = nu * 2.0*inner(epsilon(u), epsilon(v))*dx \
@@ -345,13 +371,18 @@ class CoupledNavierStokesSolver(SolverBase):
         return F + (1 / self.get_time_step(time_iter_)) * inner(u - u_prev, v) * dx
 
     def update_boundary_conditions(self, time_iter_, trial_function, test_function, ds):
+        #FIXME: for curved boundary, nitsche method is needed for 
         W = self.function_space
         n = FacetNormal(self.mesh)  # used in pressure force
 
         # the sequence must be: velocity, pressure, temperature (to share code with compressible and incompressible solver)
         if self.solving_temperature:
-            u, p, T = split(trial_function)
-            v, q, Tq = split(test_function)
+            if not self.compressible:
+                u, p, T = split(trial_function)
+                v, q, Tq = split(test_function)
+            else:
+                p, u, T = split(trial_function)
+                q, v, Tq = split(test_function)
         else:
             u, p = split(trial_function)
             v, q = split(test_function)
@@ -406,7 +437,7 @@ class CoupledNavierStokesSolver(SolverBase):
                     bvalue = self.translate_value(bc['value'])  # self.get_boundary_value(bc, 'pressure')
                     if bc['type'] == 'Dirichlet':  # pressure  inlet or outlet
                         Dirichlet_bcs_up.append(DirichletBC(W.sub(i_pressure), bvalue, self.boundary_facets, boundary['boundary_id']) )
-                        F_bc.append(inner(bvalue*n, v)*ds(boundary['boundary_id'])) # very import to make sure convergence
+                        F_bc.append(inner(bvalue*n, v)*ds(boundary['boundary_id'])) # very important to make sure convergence
                         F_bc.append(-nu*inner((grad(u) + grad(u).T)*n, v)*ds(boundary['boundary_id']))  #  pressure no viscous stress boundary
                         print("found pressure boundary for id = {}".format(boundary['boundary_id']))
                     elif bc['type'] == 'symmetry':
@@ -419,13 +450,12 @@ class CoupledNavierStokesSolver(SolverBase):
                         print('pressure boundary type`{}` is not supported thus ignored'.format(bc['type']))
 
                 elif bc['variable'] == 'temperature':  # TODO: how to share code and boundary setup with ScalerTransportSolver
-                    if self.solving_temperature:  # used by compressible NS solver
-                        pass
-                        '''
+                    if self.compressible:  # used by compressible NS solver
                         bvalue = self.translate_value(bc['value'])
                         if bc['type'] == 'Dirichlet':
                             Dirichlet_bcs_up.append(DirichletBC(W.sub(i_temperature), bvalue, self.boundary_facets, boundary['boundary_id']) )
                             #print("found temperature boundary for id = {}".format(boundary['boundary_id']))
+                        '''
                         if bc['type'] == 'symmetry':
                             pass #F_bc.append(dot(grad(T), n)*Tq*ds(boundary['boundary_id']))
                         elif bc['type'] == 'Neumann' or bc['type'] =='fixedGradient':  # unit: K/m
@@ -444,12 +474,12 @@ class CoupledNavierStokesSolver(SolverBase):
                             print('temperature boundary type`{}` is not supported thus ignored'.format(bc['type']))
                         '''
                 else:
-                    print('boundary value `{}` is not supported thus ignored'.format(bc['variable']))
+                    print('boundary setup is done in scaler transport for incompressible flow'.format(bc['variable']))
         ## end of boundary setup
         return Dirichlet_bcs_up, F_bc
 
     def solve_form(self, F, up_, Dirichlet_bcs_up):
-        #
+        # only for static case?
         if self.using_nonlinear_solver:
             problem = NonlinearVariationalProblem(F, up_, Dirichlet_bcs_up, self.J)
             solver  = NonlinearVariationalSolver(problem)
