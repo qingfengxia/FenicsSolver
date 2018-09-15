@@ -29,8 +29,12 @@ from FenicsSolver import LinearElasticitySolver
 from FenicsSolver import SolverBase
 set_log_level(ERROR)
 
-def test(has_thermal_stress, free_hanging, interactively = False):
+from config import is_interactive
+interactively = is_interactive()
 
+def test(has_thermal_stress, has_body_source, transient = False, boundary_type = 1):
+    #has_body_source to test gravity as body source
+    #
     xmin, xmax = 0, 10
     ymin, ymax = 0, 1
     zmin, zmax = 0, 1
@@ -57,39 +61,45 @@ def test(has_thermal_stress, free_hanging, interactively = False):
         def inside(self, x, on_boundary):
             return near(x[0], xmax) and near(x[1],0.5,1e-2) and near(x[2],0.5,1e-2)
 
-    #thermal distribution Expression
-
     omega = 100 # rad/s, axis, origin are other parameters
     rho = 7800 # kg/m3, density
     # body force: Loading due to centripetal acceleration (rho*omega^2*x_i) or gravity
     #bf = Expression(("rho*omega*omega*x[0]", "rho*omega*omega*x[1]", "0.0"), omega=omega, rho=rho, degree=2)
     bf = Expression(("10*rho", "0", "0.0"), omega=omega, rho=rho, degree=2)  # gravity but in x-axis
-    #
+
     from collections import OrderedDict
     bcs = OrderedDict()
     #
     #bcs["fixed"] = {'boundary': Left(), 'boundary_id': 1, 'type': 'Dirichlet', 'value': Constant((0,0,0))}
     bcs["fixed"] = {'boundary': Left(), 'boundary_id': 1, 'type': 'Dirichlet', 'value': (Constant(0), None, None)}
-    
-    if not free_hanging:
-        bcs["displ"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant((0, 0, 0))}
-    #bcs["displ"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'Dirichlet', 'value': (Constant(0), None, None)}
-    # constraint only one direction displacement
-    #bcs["displ"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'Dirichlet', 'value': (None, None, Constant(0.01))}
-    
-    #bcs["tensile"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'stress', 'value': Constant((1e8,0, 0))}  #correct, normal stress
-    # force on boundary surface is converted into tangential and normal stress and apply onto boundary facets
-    #bcs["bending"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'force', 'value': Constant((0, 1e6, 0))} # correct, shearing force
-    #bcs["pressing"] = {'boundary': top, 'boundary_id': 3, 'type': 'stress', 'value': Constant((0, 1e6, 0)), 'direction': None}
-    
+
+    if boundary_type == 1:
+        bcs["displ"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'Dirichlet', 'value': Constant((0, 0, zmax*1e-3))}
+        #bcs["displ"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'Dirichlet', 'value': (Constant(0), None, None)}
+        # constraint only one direction displacement
+        #bcs["displ"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'Dirichlet', 'value': (None, None, Constant(0.01))}
+    elif boundary_type == 2:
+        bcs["tensile"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'stress', 'value': Constant((1e8,0, 0))}  #correct, normal stress
+        # force on boundary surface is converted into tangential and normal stress and apply onto boundary facets
+        #bcs["pressing"] = {'boundary': top, 'boundary_id': 3, 'type': 'stress', 'value': Constant((0, 1e6, 0)), 'direction': None}        
+    elif boundary_type == 3:
+        bcs["bending"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'force', 'value': Constant((0, 1e6, 0))} # correct, shearing force
+    else:
+        raise NotImplementedError()
+
+    # TODO:
     #bcs["sym"] = {'boundary': bottom, 'boundary_id': 4, 'type': 'symmetry', 'value': None}
     #bcs["antisym"] = {'boundary': bottom, 'boundary_id': 4, 'type': 'antisymmetry', 'value': None}
 
-    # spring is an analog to heat transfer coefficient 
+    # TODO: spring is an analog to heat transfer coefficient 
     #bcs["spring"] = {'boundary': bottom, 'boundary_id': 4, 'type': 'spring',
     #                            'K':  Constant(), 'fixed_position': Point(xmax,4,(zmin+xmax)*0.5))}
     # for dynamic system, damping boundary
 
+    dt = 0.001
+    f =100
+    t_end = 0.005
+    transient_settings = {'transient': True, 'starting_time': 0.0, 'time_step': dt, 'ending_time': t_end}
 
     # Create function space
     fe_degree = 2
@@ -105,12 +115,17 @@ def test(has_thermal_stress, free_hanging, interactively = False):
     s['temperature_distribution']=None
     #s['vector_name'] = 'displacement'
     s['solver_settings']['reference_values'] = {'temperature':293 }  # solver specific setting
+    if transient:
+        s['solver_settings']['transient_settings'] = transient_settings
+        dynamic_stress = lambda t:  Constant((1e8*math.sin(f*math.pi*2*t), 0, 0))
+        bcs["tensile"] = {'boundary': Right(), 'boundary_id': 2, 'type': 'stress', 'value': dynamic_stress}  #correct, normal stress
+
     if has_thermal_stress:
         print('test thermal stress')
         s['temperature_distribution'] = Expression("343", degree=fe_degree)
         #Expression("dT * x[1]/ymax", dT = 100, ymax=ymax, degree=fe_degree)
         # need a better expression to test thermal. 
-    else:
+    if has_body_source:
         s['body_source'] = bf
     solver = LinearElasticitySolver.LinearElasticitySolver(s)  # body force test passed
 
@@ -145,7 +160,9 @@ def test(has_thermal_stress, free_hanging, interactively = False):
     #####################################
 
 if __name__ == '__main__':
-    test(has_thermal_stress = True, free_hanging=True)
-    test(has_thermal_stress = False, free_hanging=True, interactively = True)
-    test(has_thermal_stress = True, free_hanging=False)
-    test(has_thermal_stress = False, free_hanging=False, interactively = True)
+    #test(has_thermal_stress = True, has_body_source=True, transient = False, boundary_type =2)
+    test(has_thermal_stress = True, has_body_source=True, transient = True)
+    test(has_thermal_stress = True, has_body_source=True)
+    test(has_thermal_stress = False, has_body_source=True)
+    test(has_thermal_stress = True, has_body_source=False)
+    test(has_thermal_stress = False, has_body_source=False)

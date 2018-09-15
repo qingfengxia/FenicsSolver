@@ -20,7 +20,7 @@
 # *                                                                         *
 # ***************************************************************************
 
-""" 
+"""
 Features:
 - transient: support very slow boundary change, Elastostatics
 - thermal stress are implemented but with very basic example
@@ -57,6 +57,7 @@ class LinearElasticitySolver(SolverBase):
         SolverBase.__init__(self, case_settings)
         # solver specific setting
         self.solving_modal = False
+        self.solving_dynamics = False  # not quasi-static,  structure's acceleration make impact
 
     def sigma(self, u):
         # Stress computation for linear elasticity
@@ -66,11 +67,11 @@ class LinearElasticitySolver(SolverBase):
         lmbda = elasticity*nu/((1.0 + nu)*(1.0 - 2.0*nu))
         #return 2.0*mu*sym(grad(u)) + lmbda*tr(sym(grad(u)))*Identity(len(u))  # div(u) == tr(sym(grad(u)))?
         return 2.0*mu*sym(grad(u)) + lmbda*div(u)*Identity(len(u))
-        
+
     def von_Mises(self, u):
         s = self.sigma(u) - (1./3)*tr(self.sigma(u))*Identity(self.dimension)  # deviatoric stress
         von_Mises = sqrt(3./2*inner(s, s))
-        
+
         V = FunctionSpace(self.mesh, 'P', 1)  # correct, but why using another function space
         return project(von_Mises, V)
 
@@ -89,8 +90,8 @@ class LinearElasticitySolver(SolverBase):
         lmbda = elasticity*nu/((1.0 + nu)*(1.0 - 2.0*nu))
         return lmbda/2.0*(tr(eps(v)))^2 + mu*tr(eps(v)**2)
 
-    def get_flux(u, mag_vector): 
-        # to be overloaded in large deformation solver
+    def get_flux(self, u, mag_vector):
+        # pass-through , to be overloaded in large deformation solver
         return mag_vector
 
     def update_boundary_conditions(self, time_iter_, u, v, ds):
@@ -105,7 +106,7 @@ class LinearElasticitySolver(SolverBase):
             bcs.append(ps)
 
         if 'surface_source' in self.settings and self.settings['surface_source']:
-            gS = self.get_flux(self.settings['surface_source']['value'])
+            gS = self.get_flux(u, self.settings['surface_source']['value'])
             if 'direction' in self.settings['surface_source'] and self.settings['surface_source']['direction']:
                 direction_vector = self.settings['surface_source']['direction']
             else:
@@ -117,17 +118,35 @@ class LinearElasticitySolver(SolverBase):
 
             print(bc)
             if bc['type'] =='Dirichlet' or bc['type'] =='displacement':
-                bv = bc['value']  # translate_value() is not supported
-                if isinstance(bv, (tuple, list)) and len(bv) == self.dimension:
-                    axis_i=0
-                    for disp in bv:
-                        if not disp is None:  # None means free of constraint, but zero is kind of constraint
-                            dbc = DirichletBC(V.sub(axis_i), self.translate_value(disp), self.boundary_facets, i)
+                if not self.is_mixed_function_space:
+                    bv = bc['value']  # translate_value() is not supported for value types: [1e-3, None, None]
+                    if isinstance(bv, (tuple, list)) and len(bv) == self.dimension:
+                        axis_i=0
+                        for disp in bv:
+                            if not disp is None:  # None means free of constraint, but zero is kind of constraint
+                                dbc = DirichletBC(V.sub(axis_i), self.translate_value(disp), self.boundary_facets, i)
+                                bcs.append(dbc)
+                            axis_i += 1
+                    else:
+                        dbc = DirichletBC(V, self.translate_value(bv), self.boundary_facets, i)
+                        bcs.append(dbc)
+                else: # mixed_function_space for LargeDeformationSolver, only displacement is needed in boundary condition
+                    disp_i, vel_i, pressure_i = 0, 1, 2
+                    if 'value' in bc:  # only displacement is provided, set the velocity as zero?
+                        bv = bc['value']
+                        if isinstance(bv, (tuple, list)) and len(bv) == self.dimension:
+                            axis_i=0
+                            for disp in bv:
+                                if not disp is None:  # None means free of constraint, but zero is kind of constraint
+                                    dbc = DirichletBC(V.sub(disp_i).sub(axis_i), self.translate_value(disp), self.boundary_facets, i)
+                                    bcs.append(dbc)
+                                axis_i += 1
+                        else:  # bc['values'] =
+                            dbc = DirichletBC(V.sub(disp_i), self.translate_value(bv), self.boundary_facets, i)
                             bcs.append(dbc)
-                        axis_i += 1
-                else:
-                    dbc = DirichletBC(V, self.translate_value(bv), self.boundary_facets, i)
-                    bcs.append(dbc)
+                    else: # bc['values'] =[ {'variable': displacement' , 'value': dvalue}, { 'variable':'velocity', 'value': vvalue}
+                        pass  # not yet needed
+
             elif bc['type'] == 'force':
                 bc_force = self.translate_value(bc['value'])
                 # calc the surface area and calc stress, normal and tangential?
@@ -141,16 +160,20 @@ class LinearElasticitySolver(SolverBase):
                     direction_vector = mesh_normal
                 integrals_N.append(dot(self.get_flux(u, direction_vector*g), v)*ds(i))
             elif bc['type'] == 'pressure':
-                # normal to boundary surface, or by a given direction vector
+                # scaler, normal to boundary surface, or by a given direction vector
                 if 'direction' in bc and bc['direction']:
                     direction_vector = bc['direction']
                 else:
-                    direction_vector = mesh_normal  
+                    direction_vector = mesh_normal
                 g = direction_vector * self.translate_value(bc['value'])
                 #FIXME: assuming all force are normal to mesh boundary
                 integrals_N.append(dot(self.get_flux(u, g),v)*ds(i))
-            elif bc['type'] == 'coupling' or bc['type'] == 'stress':
+            elif bc['type'] == 'stress':  # must be normal stress vector, or stress tensor
                 g = self.translate_value(bc['value'])
+                if isinstance(g, (Constant, )):
+                    pass
+                else:
+                    g = dot(g, mesh_normal)  # FIXME: FSI reverse direction before get here
                 integrals_N.append(dot(self.get_flux(u, g),v)*ds(i))
             elif bc['type'] == 'Neumann':  # Neumann is the strain: du/dx then how to make a surface stress?
                 raise SolverError('Neumann boundary type`{}` is not supported'.format(bc['type']))
@@ -171,6 +194,11 @@ class LinearElasticitySolver(SolverBase):
         lmbda = elasticity*nu/((1.0 + nu)*(1.0 - 2.0*nu))
 
         F = inner(self.sigma(u), grad(v))*dx
+        if self.transient_settings['transient'] and self.solving_dynamics:
+            if time_iter_>=1:
+                accel = self.get_acceleration(time_iter_)
+                #mesh_velocity in FSI
+                F -= self.material['density'] * inner(accel, v) * dx
 
         ds= Measure("ds", subdomain_data=self.boundary_facets)  # if later marking updating in this ds?
         bcs, integrals_F = self.update_boundary_conditions(time_iter_, u, v, ds)
@@ -181,7 +209,7 @@ class LinearElasticitySolver(SolverBase):
             integrals_F.append( inner(self.body_source, v)*dx )
 
         # thermal stress
-        if not hasattr(self, 'temperature_distribution'): 
+        if not hasattr(self, 'temperature_distribution'):
             if 'temperature_distribution' in self.settings and self.settings['temperature_distribution']:
                 self.temperature_distribution = self.translate_value(self.settings['temperature_distribution'])
         if hasattr(self, 'temperature_distribution') and self.temperature_distribution:
@@ -198,13 +226,30 @@ class LinearElasticitySolver(SolverBase):
         return F, bcs
 
     def solve_form(self, F, u_, bcs):
-        #if self.is_iterative_solver:
-        #u_ = self.solve_iteratively(F, bcs, u)
-        u_ = self.solve_amg(F, u_, bcs)
+        if self.dimension == 3:
+            u_ = self.solve_amg(F, u_, bcs)
+        else:
+            u_ = self.solve_linear_problem(F, u_, bcs)
         # calc boundingbox to make sure no large deformation?
         return u_
 
+    def displacement(self):
+        if self.is_mixed_function_space:
+            raise SolverError('subclass with mixed_function_space must override this function')
+        else:
+            return self.w_current
+
+    def velocity(self):
+        dt = self.get_time_step(self.current_step)
+        if self.is_mixed_function_space:
+            raise SolverError('subclass with mixed_function_space must override this function')
+        else:
+            u_ = self.w_current
+            u0_ = self.w_prev
+            return (u_ - u0_)/Constant(dt)
+
     def solve_modal(self):
+        # FIXME: not yet complete code, mass matrix is not added into form, also only for linear form
         trial_function = TrialFunction(self.function_space)
         test_function = TestFunction(self.function_space)
         # Define functions for transient loop
