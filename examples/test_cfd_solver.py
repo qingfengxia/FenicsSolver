@@ -130,6 +130,13 @@ def setup(using_elbow = True, using_3D = False, compressible=False):
         bcs[k] = bcs_u[k]
 
     s = copy.copy(SolverBase.default_case_settings)
+    '''
+    dt = 0.001
+    t_end = 0.005
+    transient_settings = {'transient': True, 'starting_time': 0.0, 'time_step': dt, 'ending_time': t_end}
+    s['solver_settings']['transient_settings'] = transient_settings
+    '''
+
     s['mesh'] = mesh
     print(info(mesh))
     s['boundary_conditions'] = bcs
@@ -146,17 +153,16 @@ def test_compressible():
     from FenicsSolver import CompressibleNSSolver
     solver = CompressibleNSSolver.CompressibleNSSolver(s)  # set a very large viscosity for the large inlet width
     #solver.init_values = Expression(('1', '0', '1e-5'), degree=1)
-    u,p, T= split(solver.solve())
     if interactively:
         solver.plot()
 
-def test_incompressible(using_elbow = True, coupling_energy_equation = True):
+def test_incompressible(using_elbow = True, coupling_energy_equation = True, Newtonian = True ):
     s = setup(using_elbow, using_3D = False, compressible = False)
-    #s['solving_temperature'] = coupling_energy_equation
-    Newtonian = False  # nonNewtonian diverges!
+    s['solving_temperature'] = coupling_energy_equation
+    # nonNewtonian diverges!
 
     if using_elbow:
-        Re = 1e-3  # see pressure change,     # stabilization_method seems make no difference
+        Re = 1e0  # see pressure change,     # stabilization_method seems make no difference
     else:
         s['fe_degree'] = 1  # test failed, can not finish JIT
         Re = 10  # mesh is good enough to simulate higher Re
@@ -165,12 +171,13 @@ def test_incompressible(using_elbow = True, coupling_energy_equation = True):
                 'specific_heat_capacity': 4200, 'thermal_conductivity':  0.1, 'Newtonian': Newtonian}
     s['material'] = fluid
 
-    s['advection_settings'] = {'Re': Re, 'stabilization_method': 'G2' , 'kappa1': 4, 'kappa2': 2}
+    # Re=10 is working without G2, when Re=1e-3 got NaN error, it is not clear why
+    #s['advection_settings'] = {'Re': Re, 'stabilization_method': 'G2' , 'kappa1': 4, 'kappa2': 2}
     print("Reynolds number = ", Re)
 
     from FenicsSolver import CoupledNavierStokesSolver
     solver = CoupledNavierStokesSolver.CoupledNavierStokesSolver(s)  # set a very large viscosity for the large inlet width
-    #solver.init_values = Expression(('1', '0', '1e-5'), degree=1)
+    #solver.using_nonlinear_solver = False
     if coupling_energy_equation:
         u,p,T= split(solver.solve())
     else:
@@ -191,9 +198,10 @@ def test_incompressible(using_elbow = True, coupling_energy_equation = True):
 
 
 if __name__ == '__main__':
-    test_incompressible()
-    #test_incompressible(False, False)  # driven cavity failed
+    test_incompressible(using_elbow = True, coupling_energy_equation = True, Newtonian = True)
+    #test_incompressible(using_elbow = True, coupling_energy_equation = False, Newtonian = False)
+    #test_incompressible(False, False, True)  # driven cavity failed
+    #test_incompressible(False, True)  # Elbow 3D is slow but possible
 
     # manually call test function,  if discovered by google test, it will not plot in interactive mode
-    #test_incompressible(False, True)  # Elbow 3D is slow but possible
     #test_compressible(True, True)

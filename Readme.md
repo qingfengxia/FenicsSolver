@@ -59,7 +59,7 @@ Run the python script files with "test_" suffix, which are gtest compatible.
 
 ## Roadmap and progress
 
-see also my presentation at Fenics 18: [Automated Mechanical Engineering Design using Open Source CAE Software Packages]("doc/Fenics18_Xia.pdf")
+see also my presentation at Fenics 18: [Automated Mechanical Engineering Design using Open Source CAE Software Packages](doc/Fenics18_Xia.pdf)
 
 ### 1. Initial demonstration (Sep 2017)
 
@@ -77,7 +77,7 @@ Meanwhile, FreeCAD developer *joha2* has added mesh export function in FemWorkbe
 ### 3. Coupling of multiple solvers (planned in late 2018)
 
 Fluid-structure interaction coupling has a initial implementation in segregate coupling mode, see engine seal FSI simulation:
-[2D FSI simulation of labyrinth seal]("doc/fsi_velmag.pdf")
+![2D FSI simulation of labyrinth seal]("doc/fsi_velmag.mp4")
 
 Tight coupling of all physical fields is under design, target on Lithium ion Battery thermal modelling.
 
@@ -87,7 +87,7 @@ VTK is the data exchange format for one-way coupling from OpenFOAM to FenicsSolv
 Two-way coupling should be implemented with the multiphysics coupling library [preCICE](https://github.com/precice/precice)
 
 a video/presentation of my 13th OpenFOAM workshop presentation can be found here:
-[Coupling OpenFOAM with FeniCS for multiphysis simulation](https://www.iesensor.com/blog/2018/06/25/coupling-openfoam-with-fenics-for-multiphysis-simulation-openfoam-workshop-13-presentation/)
+![Coupling OpenFOAM with FeniCS for multiphysis simulation](https://www.iesensor.com/blog/2018/06/25/coupling-openfoam-with-fenics-for-multiphysis-simulation-openfoam-workshop-13-presentation/)
 
 
 ## Acknowledgement

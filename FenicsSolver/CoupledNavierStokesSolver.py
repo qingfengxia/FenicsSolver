@@ -35,7 +35,9 @@ from dolfin import *
 """
 Feature:  coupled velocity and pressure laminar flow with G2 stabilisaton
 
-General Galerkin (G2) stabilisaton (reference paper: ) is not not well tesd.
+General Galerkin (G2) stabilisaton (reference paper: ), but it still does not work for Re>10.
+Turbulent flow will not be implemented: use third-party solvers like Oasis: a high-level/high-performance open source Navier-Stokes solver
+OpenFOAM solver.
 
 TODO:
 1. temperature induced natural convection, need solve thermal, constant thermal expansion coeffi
@@ -53,9 +55,7 @@ reference_frame_settings = {'type': 'SRF',  'center_point': (0, 0, 0), 'omega': 
                                             omega*omega*x_vector + cross(2*omega, u_vector)
                                             stab for coriolis force item?
 
-3. turbulent flow: Oasis: a high-level/high-performance open source Navier-Stokes solve
-
-4. nonlinear viscosity model, nu(T), nu(U, p, T), diverging !
+3. nonlinear viscosity model, nu(T), nu(U, p, T), curerntly diverging !
 """
 
 from .SolverBase import SolverBase
@@ -126,9 +126,15 @@ class CoupledNavierStokesSolver(SolverBase):
         return body_force
 
     def get_initial_field(self):
-        # assume: velocity is a tupe of constant
-        # function assigner is another way, assign(m.sub(0), v0)
+        # assume: velocity is a tupe of constant, or string expression, or a function of the mixed functionspace
         print(self.initial_values)
+
+        if isinstance(self.initial_values, (Function,)):
+            try:
+                up0 = Function(self.initial_values)  # same mesh and function space
+            except:
+                up0 = project(self.initial_values, self.function_space)
+            return up0
 
         _initial_values = list(self.initial_values['velocity'])
         _initial_values.append(self.initial_values['pressure'])
@@ -140,7 +146,7 @@ class CoupledNavierStokesSolver(SolverBase):
         return up0
 
     def viscous_stress(self, up, T_space):
-        u, p = split(up)  # TODO:
+        u, p = split(up)  # TODO: not general split
         if not T_space:
             T_space = TensorFunctionSpace(self.function_space.mesh(), 'CG', 1)
         sigma = project(self.viscosity()*(grad(u) + grad(u).T) - p*Identity(self.dimension), T_space, \
@@ -161,9 +167,9 @@ class CoupledNavierStokesSolver(SolverBase):
             traction = interpolate(traction, target_space)  # project does not work
         return traction
 
-    def calc_drag_and_lift(self, u, p, drag_axis_index, lift_axis_index, boundary_index_list):
+    def calc_drag_and_lift(self, up, drag_axis_index, lift_axis_index, boundary_index_list):
         # Compute force on cylinder,  axis_index: 0 for x-axis, 1 for y_axis
-        T = self.viscous_stress(u, p)
+        T = self.viscous_stress(up)
         n = FacetNormal(self.mesh)
         if (boundary_index_list and len(boundary_index_list)):
             drag = -T[drag_axis_index,j]*n[j]*self.ds(boundary_index_list[0])
@@ -238,7 +244,8 @@ class CoupledNavierStokesSolver(SolverBase):
         return F, Dirichlet_bcs_up
 
     def generate_thermal_form(self, time_iter_, trial_function, test_function, up_current, up_prev):
-            # temperatuer related items for the coupled vel, pressure and temperature form
+            # temperature related items for the coupled vel, pressure and temperature form
+            assert not self.compressible
             u, p, T = split(trial_function)
             v, q, Tq = split(test_function)
             u_current, p_current, T_current = split(up_current)
@@ -371,11 +378,12 @@ class CoupledNavierStokesSolver(SolverBase):
         return F + (1 / self.get_time_step(time_iter_)) * inner(u - u_prev, v) * dx
 
     def update_boundary_conditions(self, time_iter_, trial_function, test_function, ds):
-        #FIXME: for curved boundary, nitsche method is needed for 
+        # shared by compressible and incompressible fluid solver
+        #FIXME: for curved boundary, nitsche method is needed?
         W = self.function_space
         n = FacetNormal(self.mesh)  # used in pressure force
 
-        # the sequence must be: velocity, pressure, temperature (to share code with compressible and incompressible solver)
+        # the sequence is different for velocity, pressure, temperature (to share code with compressible and incompressible solver)
         if self.solving_temperature:
             if not self.compressible:
                 u, p, T = split(trial_function)
@@ -455,7 +463,7 @@ class CoupledNavierStokesSolver(SolverBase):
                         if bc['type'] == 'Dirichlet':
                             Dirichlet_bcs_up.append(DirichletBC(W.sub(i_temperature), bvalue, self.boundary_facets, boundary['boundary_id']) )
                             #print("found temperature boundary for id = {}".format(boundary['boundary_id']))
-                        '''
+                        ''' # not yet implemented for those bc below
                         if bc['type'] == 'symmetry':
                             pass #F_bc.append(dot(grad(T), n)*Tq*ds(boundary['boundary_id']))
                         elif bc['type'] == 'Neumann' or bc['type'] =='fixedGradient':  # unit: K/m

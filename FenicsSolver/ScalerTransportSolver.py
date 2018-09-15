@@ -152,9 +152,12 @@ class ScalerTransportSolver(SolverBase):
             bc = self.get_boundary_variable(bc_settings)  # should deal with 'value' and 'values = []'
 
             if bc['type'] == 'Dirichlet' or bc['type'] == 'fixedValue':
-                T_bc = self.translate_value(bc['value'])
-                dbc = DirichletBC(self.function_space, T_bc, self.boundary_facets, i)
-                bcs.append(dbc)
+                if not isinstance(bc['value'], DirichletBC):
+                    T_bc = self.translate_value(bc['value'])
+                    dbc = DirichletBC(self.function_space, T_bc, self.boundary_facets, i)
+                    bcs.append(dbc)
+                else:
+                    bcs.append(bc['value'])
             elif bc['type'] == 'Neumann' or bc['type'] =='fixedGradient':  # unit: K/m
                 g = self.translate_value(bc['value'])
                 if self.using_diffusion_form:
@@ -238,12 +241,19 @@ class ScalerTransportSolver(SolverBase):
             if ads['stabilization_method'] == 'SPUG':
                 # Add SUPG stabilisation terms
                 print('solving convection by SPUG stablization')
-
+                #`Numerical simulations of advection-dominated scalar mixing with applications to spinal CSF flow and drug transport` page 20
+                # SPUG_method == 2, ref: 
                 vnorm = sqrt(dot(velocity, velocity))
                 Pe = ads['Pe']  # Peclet number: 
-                tau = 0.5*h*pow(4.0/(Pe*h)+2.0*vnorm,-1.0)
-                Tq = (T_test + tau*dot(velocity, grad(T_test)))
-                #Tq = (T_test + h/(2*vnorm)*dot(velocity, grad(T_test)))
+                tau = 0.5*h*pow(4.0/(Pe*h)+2.0*vnorm,-1.0)  # this user-chosen value
+                delta = h/(2*vnorm)
+                SPUG_method = 2
+                if SPUG_method == 2:
+                    Tq = (T_test + tau*inner(velocity, grad(T_test)))  # residual and variatonal form has diff sign for  the diffusion item
+                elif SPUG_method == 1:
+                    Tq = T_test
+                else:
+                    raise SolverError('SPUG only has only 2 variants')
             else:
                 Tq = T_test
         else:
@@ -257,16 +267,9 @@ class ScalerTransportSolver(SolverBase):
             theta = Constant(0.5) # Crank-Nicolson time scheme
             # Define time discretized equation, it depends on scaler type:  Energy, Species,
             F = (1.0/dt)*inner(T-T_prev, Tq)*capacity*dx \
-                   + theta*F_static(T, Tq) + (1.0-theta)*F_static(T_prev, Tq)  # FIXME:  check using T_0 or T_prev ? 
+                   + theta*F_static(T, Tq) + (1.0-theta)*F_static(T_prev, Tq)  # FIXME:  check using T_0 or T_prev ?
         else:
             F = F_static(T, Tq)
-
-        if self.convective_velocity:
-            F += inner(velocity, grad(T))*Tq*capacity*dx
-            if ads['stabilization_method'] and ads['stabilization_method'] == 'IP':
-                print('solving convection by interior penalty stablization')
-                alpha = avg(Constant(ads['alpha']))
-                F +=  alpha*avg(h)**2*inner(jump(grad(T),normal), jump(grad(Tq),normal))*capacity*dS
 
         bcs, integrals_N = self.update_boundary_conditions(time_iter_, T, Tq, ds)
         if integrals_N:
@@ -276,13 +279,32 @@ class ScalerTransportSolver(SolverBase):
         if bs_items:
             F -= sum(bs_items)
 
+        if self.convective_velocity:
+            F += inner(velocity, grad(T))*Tq*capacity*dx
+            if ads['stabilization_method'] and ads['stabilization_method'] == 'IP':
+                print('solving convection by interior penalty stablization')
+                alpha = avg(Constant(ads['alpha']))
+                F +=  alpha*avg(h)**2*inner(jump(grad(T),normal), jump(grad(Tq),normal))*capacity*dS
+            if ads['stabilization_method'] and ads['stabilization_method'] == 'SPUG' and SPUG_method == 1:
+                #https://fenicsproject.org/qa/6951/help-on-supg-method-in-the-advection-diffusion-demo/
+                if self.transient_settings['transient']:
+                    residual = dot(velocity, grad(T)) - theta*conductivity*div(grad(T)) - (1.0-theta)*conductivity*div(grad(T_prev)) \
+                                    + (1.0/dt)*inner(T-T_prev, Tq)*capacity # FIXME:
+                else:
+                    residual = dot(velocity, grad(T)) - conductivity*div(grad(T))  # diffusion item sign is different from variational form
+                F_residual = residual * delta*dot(velocity, grad(Tq)) * dx
+                bs_r_items = self.get_body_source_items(time_iter_,T, delta*dot(velocity, grad(Tq)), dx)
+                if bs_r_items:
+                    F_residual -= sum(bs_r_items)
+                F += F_residual
+
         using_mass_conservation = False # not well tested, Nitsche boundary
         if using_mass_conservation:
             print('mass conservation compensation for zero mass flux on the curved boundary')
             sigma = Constant(2) # penalty parameter
             #he = self.mesh.ufl_cell().max_facet_edge_length,    T - Constant(300)
             #F -= inner(dot(velocity, normal), dot(grad(T), normal))*Tq*capacity*ds  # (1.0/ h**sigma) *
-            F += dot(dot(velocity, normal), T)*capacity*ds
+            F -= dot(dot(velocity, normal), T)*capacity*ds*Tq
 
         #print(F)
         if self.scaler_name == "temperature":
@@ -333,6 +355,6 @@ class ScalerTransportSolver(SolverBase):
 
     def export(self):
         #save and return save file name, also timestamp
-        result_filename = self.settings['case_folder'] + os.path.sep + "temperature" + "_time0" +  ".vtk"
+        result_filename = self.settings['case_folder'] + os.path.sep + self.get_variable_name() + "_time0" +  ".vtk"
         return result_filename
 

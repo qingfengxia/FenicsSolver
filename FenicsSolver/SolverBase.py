@@ -279,7 +279,7 @@ class SolverBase():
                 u0.vector()[:] = 0.0 # default to zero
                 return u0
             elif 'vector_name' in self.settings:
-                v0 = (0, 0, 0)[:self.dimension]
+                v0 = (0, ) * self.dimension
             elif 'scaler_name' in self.settings:
                 v0 = 0
             else:
@@ -392,10 +392,14 @@ class SolverBase():
         if not variable:
             variable = self.get_variable_name()
         #print('variable = ', variable)
-        if 'values' in bc and variable in bc['values']:  # new style, boundary contains a 'values' list
-            bvariable = bc['values'][variable]
-        else:
-            bvariable = bc
+        bvariable = bc
+        if 'values' in bc:
+            if isinstance(bc['values'], dict) and variable in bc['values']:
+                bvariable = bc['values'][variable]
+            if isinstance(bc['values'], list):
+                for vbc in bc['values']:
+                    if 'variable' in vbc and vbc['variable'] == variable:
+                        bvariable = vbc
         return bvariable
 
     def get_boundary_value(self, bc, variable=None):
@@ -543,7 +547,7 @@ class SolverBase():
         #how to deal with DG and higher order element? velocity of NS has order 2
         if (not self.is_mixed_function_space):
             result_stream = File(result_filename)
-            result_stream << self.w_current
+            result_stream << (self.w_current, self.current_time)
         else:
             # write all var into one pvd is possible as multiblock dataset
             suffix = '.pvd'
@@ -555,7 +559,7 @@ class SolverBase():
                 var.rename(var_name, "label")  # why renaming does not show in vtu file?
                 var_result_filename = result_filename_root + '_' + var_name + suffix
                 result_stream = File(var_result_filename)
-                result_stream << var
+                result_stream << (var, self.current_time)
 
     ####################################
     def solve_linear_problem(self, F, u, Dirichlet_bcs):
