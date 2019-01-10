@@ -77,7 +77,7 @@ default_case_settings = {'solver_name': None,
                 'boundary_conditions': None, # OrderedDict
                 'body_source': None,  # dict for different subdomains {"sub_name": {'subdomain_id': 1, 'value': 2}}
                 'surface_source': None,  # apply to all boundary,  {'value': 100, 'direction': Constant(1,0,0)} without direction mean normal
-                'initial_values': {},  # dict with key as scaler or vector name
+                'initial_values': {},  # dict with key as scalar or vector name
                 'material':{},  # can be a list of material dict for different subdomains
                 'solver_settings': {
                     'transient_settings': {'transient': False, 'starting_time': 0, 'time_step': 0.01, 'ending_time': 0.03},
@@ -247,7 +247,7 @@ class SolverBase():
 
     def generate_function_space(self, periodic_boundary):
         self.is_mixed_function_space = False  # todo: how to detect it is mixed?
-        if "scaler_name" in self.settings:
+        if "scalar_name" in self.settings:
             if periodic_boundary:
                 self.function_space = FunctionSpace(self.mesh, self.settings['fe_family'], self.settings['fe_degree'], constrained_domain=periodic_boundary)
                 # the group and degree of the FE element.
@@ -260,7 +260,7 @@ class SolverBase():
             else:
                 self.function_space = VectorFunctionSpace(self.mesh, self.settings['fe_family'], self.settings['fe_degree'])
         else:
-            raise SolverError('only scaler or vector solver has a base method of generate_function_space()')
+            raise SolverError('only scalar or vector solver has a base method of generate_function_space()')
 
     def generate_boundary_facets(self):
         boundary_facets = MeshFunction('size_t', self.mesh, self.mesh.geometry().dim()-1)
@@ -271,7 +271,7 @@ class SolverBase():
         self.boundary_facets = boundary_facets
 
     def get_initial_field(self):
-        # must return Function, currently only support single scaler or vector
+        # must return Function, currently only support single scalar or vector
         if not self.initial_values:
             #if isinstance(self.function_space, (VectorFunctionSpace,)):
             if self.is_mixed_function_space:
@@ -280,24 +280,24 @@ class SolverBase():
                 return u0
             elif 'vector_name' in self.settings:
                 v0 = (0, ) * self.dimension
-            elif 'scaler_name' in self.settings:
+            elif 'scalar_name' in self.settings:
                 v0 = 0
             else:
-                raise SolverError('only vector and scaler equation can run this method')
+                raise SolverError('only vector and scalar equation can run this method')
         else:
             if self.is_mixed_function_space:
-                raise SolverError('only vector and scaler function can run this method')
+                raise SolverError('only vector and scalar function can run this method')
             elif 'vector_name' in self.settings:
                 v0 = self.initial_values[self.settings['vector_name']]
-            elif 'scaler_name' in self.settings:
-                v0 = self.initial_values[self.settings['scaler_name']]
+            elif 'scalar_name' in self.settings:
+                v0 = self.initial_values[self.settings['scalar_name']]
             else:
-                raise SolverError('only vector and scaler function can run this method')
+                raise SolverError('only vector and scalar function can run this method')
 
         if 'vector_name' in self.settings and isinstance(v0[0], (str, numbers.Number)):
             _initial_values_expr = Expression( tuple([str(v) for v in v0]), degree = self.settings['fe_degree'])
             u0 = interpolate(_initial_values_expr, self.function_space)
-        elif 'scaler_name' in self.settings and isinstance(v0, (str, numbers.Number)):
+        elif 'scalar_name' in self.settings and isinstance(v0, (str, numbers.Number)):
             _initial_values_expr = Expression(str(v0), degree = self.settings['fe_degree'])
             u0 = interpolate(_initial_values_expr, self.function_space)
         elif isinstance(v0, (Function,)):
@@ -381,8 +381,8 @@ class SolverBase():
         return values_0
 
     def get_variable_name(self):
-        if 'scaler_name' in self.settings:
-            return self.settings['scaler_name']
+        if 'scalar_name' in self.settings:
+            return self.settings['scalar_name']
         elif 'vector_name' in self.settings:
             return self.settings['vector_name']
         else:
@@ -434,7 +434,7 @@ class SolverBase():
             if len(ts) >= time_iter_:
                 dt = ts[time_iter_] - ts[time_iter_]
             else:
-                print('time step can only be a sequence or scaler')
+                print('time step can only be a sequence or scalar')
         #self.mesh.hmin()  # Compute minimum cell diameter. courant number
         return dt
 

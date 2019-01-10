@@ -150,7 +150,7 @@ settings = {'solver_name': 'ScalarTransportSolver',
                                                 },
                 },
             # solver specific settings
-            'scaler_name': 'temperature',
+            'scalar_name': 'temperature',
             }
 
 

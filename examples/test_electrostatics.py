@@ -91,7 +91,7 @@ settings = {'solver_name': 'ScalarTransportSolver',
                                                     },
                     },
                 # solver specific settings
-                'scaler_name': 'electric_potential',
+                'scalar_name': 'electric_potential',
                 }
 
 def test():

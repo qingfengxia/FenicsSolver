@@ -158,7 +158,7 @@ class CoupledNavierStokesSolver(SolverBase):
         # https://www.openfoam.com/documentation/cpp-guide/html/classFoam_1_1functionObjects_1_1externalCoupled.html#a1063d7a675858ee0e647e36abbefe463
         sigma = self.viscous_stress(up)  # already included pressure
         n = FacetNormal(self.mesh)
-        # stress_normal = dot(n, dot(sigma, n))  #scaler, pressure
+        # stress_normal = dot(n, dot(sigma, n))  #scalar, pressure
         # (tangential stress vector) = dot(sigma, n) - stress_normal*n
         #traction = dot(sigma, n)  # may need as_vector, can not project?
         traction = sigma[i,j]*n[j]  # ufl.log.UFLException: Shapes do not match
@@ -254,7 +254,7 @@ class CoupledNavierStokesSolver(SolverBase):
 
             #translate_setting, set the FunctionSpace
             Tsettings = copy.copy(self.settings)
-            Tsettings['scaler_name'] = 'temperature'
+            Tsettings['scalar_name'] = 'temperature'
             Tsettings['mesh'] = None
             Tsettings['function_space'] =  self.function_space.sub(2)
             #Tsettings['convective_velocity'] = u_current  # can not use u_trial_function
@@ -282,7 +282,7 @@ class CoupledNavierStokesSolver(SolverBase):
             #viscous_heating =  2 * self.viscosity(up_current) * tr(dot(epsdot, epsdot))
             print('type of viscous heating:', type(viscous_heating))
             ## sigma * u:  heat flux,  sigma * grad(u) heat source
-            #F_T -= viscous_heating *Tq*dx  # need sum to scaler!
+            #F_T -= viscous_heating *Tq*dx  # need sum to scalar!
             return F_T, T_bc
 
     def F_static(self, trial_function, test_function, up_0):
@@ -423,10 +423,10 @@ class CoupledNavierStokesSolver(SolverBase):
                 if bc['variable'] == 'velocity':
                     print(bc['value'])
                     bvalue = self.translate_value(bc['value'])
-                    '''  only velocity vector is acceptable, it must NOT be a magnitude scaler
+                    '''  only velocity vector is acceptable, it must NOT be a magnitude scalar
                     if hasattr(bc['value'], '__len__') and len(bc['value']) == self.dimension:
                         bvalue = self.translate_value(bc['value'])
-                    else:  # scaler
+                    else:  # scalar
                         #bvalue = self.translate_value(bc['value'])*n
                         raise TypeError('FacetNormal can not been used in Dirichlet boundary')
                     '''
@@ -485,7 +485,7 @@ class CoupledNavierStokesSolver(SolverBase):
                             print('temperature boundary type`{}` is not supported thus ignored'.format(bc['type']))
                         '''
                 else:
-                    print('boundary setup is done in scaler transport for incompressible flow'.format(bc['variable']))
+                    print('boundary setup is done in scalar transport for incompressible flow'.format(bc['variable']))
         ## end of boundary setup
         return Dirichlet_bcs_up, F_bc
 

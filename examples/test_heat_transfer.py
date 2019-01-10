@@ -85,7 +85,7 @@ settings = {'solver_name': 'ScalerEquationSolver',
                                                     },
                     },
                 # solver specific settings
-                'scaler_name': 'temperature',
+                'scalar_name': 'temperature',
                 }
 
 K_anisotropic = Expression((('exp(x[0])','sin(x[1])'), ('sin(x[0])','tan(x[1])')), degree=0)  #works!

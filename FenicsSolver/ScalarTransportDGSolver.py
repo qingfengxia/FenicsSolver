@@ -30,12 +30,12 @@ import numpy as np
 
 from dolfin import *
 
-supported_scalers = {'temperature', 'electric_potential', 'species_concentration'}
+supported_scalars = {'temperature', 'electric_potential', 'species_concentration'}
 
 
 from .ScalarTransportSolver import ScalarTransportSolver
 from .SolverBase import SolverBase, SolverError
-class ScalerTransportDGSolver(ScalarTransportSolver):
+class ScalarTransportDGSolver(ScalarTransportSolver):
     """ share code as much as possible withe the CG version, 
     adapted from official tutorial:  2D, no source, no Neumann boundary
     https://github.com/FEniCS/dolfin/tree/master/demo/undocumented/dg-advection-diffusion

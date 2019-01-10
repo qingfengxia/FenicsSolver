@@ -28,7 +28,7 @@ import numpy as np
 
 from dolfin import *
 
-supported_scalers = {'temperature', 'electric_potential', 'species_concentration'}
+supported_scalars = {'temperature', 'electric_potential', 'species_concentration'}
 electric_permittivity_in_vacumm = 8.854187817e-12
 # For small species factor, diffusivity = primary species, such as dye in water, always with convective velocity
 # electric_potential, only for dieletric material electrostatics (permittivity/conductivity << 1)
@@ -40,7 +40,7 @@ electric_permittivity_in_vacumm = 8.854187817e-12
 
 from .SolverBase import SolverBase, SolverError
 class ScalarTransportSolver(SolverBase):
-    """  general scaler transportation (diffusion and advection) solver, exampled by Heat Transfer
+    """  general scalar transportation (diffusion and advection) solver, exampled by Heat Transfer
     # 4 types of boundaries supported: math, physical 
     # body source unit:  W/m^3, apply to whole body/domain
     # surface source unit: W/m^2, apply to whole boundary,  
@@ -54,10 +54,10 @@ class ScalarTransportSolver(SolverBase):
     def __init__(self, s):
         SolverBase.__init__(self, s)
 
-        if 'scaler_name' in self.settings:
-            self.scaler_name = self.settings['scaler_name'].lower()
+        if 'scalar_name' in self.settings:
+            self.scalar_name = self.settings['scalar_name'].lower()
         else:
-            self.scaler_name = "temperature"
+            self.scalar_name = "temperature"
         self.using_diffusion_form = False  # diffusion form is simple in math, but not easy to deal with nonlinear material property
 
         self.nonlinear = False
@@ -66,7 +66,7 @@ class ScalarTransportSolver(SolverBase):
             if callable(v):  # fixedme: if other material properties are functions, it will be regarded as nonlinear
                 self.nonlinear = True
 
-        if self.scaler_name == "eletric_potential":
+        if self.scalar_name == "eletric_potential":
             assert self.settings['transient_settings']['transient'] == False
         #delay the convective velocity and radiation setting detection in geneate_form()
 
@@ -75,15 +75,15 @@ class ScalarTransportSolver(SolverBase):
         if 'capacity' in self.material:
             c = self.material['capacity']
         # if not found, calc it, otherwise, it is 
-        elif self.scaler_name == "temperature":
+        elif self.scalar_name == "temperature":
             cp = self.material['specific_heat_capacity']
             c = self.material['density'] * cp
-        elif self.scaler_name == "electric_potential":
+        elif self.scalar_name == "electric_potential":
             c = electric_permittivity_in_vacumm
-        elif self.scaler_name == "spicies_concentration":
+        elif self.scalar_name == "spicies_concentration":
             c = 1
         else:
-            raise SolverError('material capacity property is not found for {}'.format(self.scaler_name))
+            raise SolverError('material capacity property is not found for {}'.format(self.scalar_name))
         #print(type(c))
         from inspect import isfunction
         if isfunction(c):  # accept only function or lambda,  ulf.algebra.Product is also callable
@@ -94,14 +94,14 @@ class ScalarTransportSolver(SolverBase):
     def diffusivity(self, T=None):
         if 'diffusivity' in self.material:
             c = self.material['diffusivity']
-        elif self.scaler_name == "temperature":
+        elif self.scalar_name == "temperature":
             c = self.material['thermal_conductivity'] / self.capacity()
-        elif self.scaler_name == "electric_potential":
+        elif self.scalar_name == "electric_potential":
             c = self.material['relative_electric_permittivity']
-        elif self.scaler_name == "spicies_concentration":
+        elif self.scalar_name == "spicies_concentration":
             c = self.material['diffusivity']
         else:
-            raise SolverError('conductivity material property is not found for {}'.format(self.scaler_name))
+            raise SolverError('conductivity material property is not found for {}'.format(self.scalar_name))
 
         from inspect import isfunction  # dolfin.Funciton is also callable
         if isfunction(c):
@@ -113,11 +113,11 @@ class ScalarTransportSolver(SolverBase):
         # nonlinear material:  c = function(T)
         if 'conductivity' in self.material:
             c = self.material['conductivity']
-        elif self.scaler_name == "temperature":
+        elif self.scalar_name == "temperature":
             c = self.material['thermal_conductivity']
-        elif self.scaler_name == "electric_potential":
+        elif self.scalar_name == "electric_potential":
             c = self.material['relative_electric_permittivity'] * electric_permittivity_in_vacumm
-        elif self.scaler_name == "spicies_concentration":
+        elif self.scalar_name == "spicies_concentration":
             c = self.material['diffusivity']
         else:
             c = self.diffusivity() * self.capacity()
@@ -282,7 +282,7 @@ class ScalarTransportSolver(SolverBase):
         if self.transient_settings['transient']:
             dt = self.get_time_step(time_iter_)
             theta = Constant(0.5) # Crank-Nicolson time scheme
-            # Define time discretized equation, it depends on scaler type:  Energy, Species,
+            # Define time discretized equation, it depends on scalar type:  Energy, Species,
             # FIXME: nonlinear capacity is not supported
             F = (1.0/dt)*inner(T-T_prev, Tq)*capacity*dx \
                    + theta*F_static(T, Tq) + (1.0-theta)*F_static(T_prev, Tq)  # FIXME:  check using T_0 or T_prev ?
@@ -329,7 +329,7 @@ class ScalarTransportSolver(SolverBase):
             #F -= inner(dot(velocity, normal), dot(grad(T), normal))*Tq*capacity*ds  # (1.0/ h**sigma) *
             F -= dot(dot(velocity, normal), T)*capacity*ds*Tq
 
-        if self.scaler_name == "temperature":
+        if self.scalar_name == "temperature":
             if ('radiation_settings' in self.settings and self.settings['radiation_settings']):
                 self.radiation_settings = self.settings['radiation_settings']
                 self.has_radiation = True
