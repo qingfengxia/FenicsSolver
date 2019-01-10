@@ -25,7 +25,7 @@ import math
 import numpy as np
 
 from dolfin import *
-from FenicsSolver.ScalerTransportSolver  import ScalerTransportSolver
+from FenicsSolver.ScalarTransportSolver  import ScalarTransportSolver
 
 from config import is_interactive
 interactively = is_interactive()
@@ -165,7 +165,7 @@ def setup(using_anisotropic_conductivity, using_convective_velocity, using_DG_so
     else:
         settings['convective_velocity'] = None
 
-    solver = ScalerTransportSolver(settings)
+    solver = ScalarTransportSolver(settings)
 
     solver.material['conductivity'] = K
     #debugging: show boundary selection
@@ -207,7 +207,7 @@ def test_radiation():
                  } }
     settings['radiation_settings'] = {'ambient_temperature': T_ambient-20, 'emissivity': 0.9}
     settings['convective_velocity'] = None
-    solver = ScalerTransportSolver(settings)
+    solver = ScalarTransportSolver(settings)
     solver.material['conductivity'] = K
     solver.material['emissivity'] = 0.9
 

@@ -12,26 +12,28 @@ LGPL licensed as [FreeCAD]<https://github.com/FreeCAD/FreeCAD> and [fenics-proje
 
 ## Description
 
-A set of multi-physics FEM solvers based on Fenics with GUI support(via integration Fenics into FreeCAD FemWorkbench and CfdWorkbench), focusing on nonlinear problem and mutlti-solver coupling.It functions like COMSOL or Moose, but it is free and it is made of Python.
+A set of multi-physics FEM solvers based on Fenics with GUI support(via integration Fenics into FreeCAD FemWorkbench and CfdWorkbench), focusing on multi-body, reduced-order nonlinear problem and mutlti-solver coupling.It functions like COMSOL or Moose, but it is free and it is made of Python.
 
 + Solvers implemented:
-  - ScalerTransport (heat transfer, mass transfer, electric potential, etc)
+  - ScalarTransport (heat transfer, mass transfer, electric potential, etc)
   - Navier Stokes incompressible laminar flow, 
   - linear elasticity, nonlinear (hyperelastic) elasticity, large deformation, plasticity
 
 + Solvers under development:
-  - scaler transport using DG
+  - scalar transport using DG
   - viscoelastic
-  - Navier Stokes compressible laminar flow, 
+  - Navier Stokes compressible laminar flow 
   - Maxwell electromagnetics
   - drift-diffusion (plasma and semiconductor)
   - wave propagation
 
 + coupling of above solvers
-  - flow-structure interaction
-  - thermal, chemical, electrical, structure process of Lithium battery (yet complete)
+  - flow-structure interaction (coded but not yet tested)
+  - thermal, chemical, electrical, structure process (yet completed)
 
-+ Coupling to external solvers: turbulent flow and multiphase flow will be implemented by coupled to external CFD solver, OpenFOAM.
++ Coupling to external solvers:
+  - turbulent flow and multiphase flow will be implemented by coupled to external CFD solver, OpenFOAM.
+
 
 
 ## Installation
@@ -74,20 +76,30 @@ Case setup: json file format is the text case setup file, mapping directly to an
 Meanwhile, FreeCAD developer *joha2* has added mesh export function in FemWorkbench, once the boundary mesh can be exported, case setup for fenics solver will be write in FreeCAD workbench.
 
 
-### 3. Coupling of multiple solvers (planned in late 2018)
+### 3. Coupling of multiple solvers (implemented in 2018, not yet fully tested)
 
 Fluid-structure interaction coupling has a initial implementation in segregate coupling mode, see engine seal FSI simulation:
 ![2D FSI simulation of labyrinth seal](doc/fsi_velmag.mp4)
 
-Tight coupling of all physical fields is under design, target on Lithium ion Battery thermal modelling.
+Tight coupling of all physical fields is under design, target on thermal modelling of complicated systems like bearing, motor, etc.
 
-### 4. Coupling with external solvers OpenFOAM
+### 4. Coupling with external solvers OpenFOAM (some work has been done, but yet completed, scheduled to 2019)
 
 VTK is the data exchange format for one-way coupling from OpenFOAM to FenicsSolver, from Foam to VTK and VTK to Foam (mesh and internal field data files)
 Two-way coupling should be implemented with the multiphysics coupling library [preCICE](https://github.com/precice/precice)
 
-a video/presentation of my 13th OpenFOAM workshop presentation can be found here:
+a video/presentation of my *13th OpenFOAM Workshop* presentation can be found here:
 [Coupling OpenFOAM with FeniCS for multiphysis simulation](https://www.iesensor.com/blog/2018/06/25/coupling-openfoam-with-fenics-for-multiphysis-simulation-openfoam-workshop-13-presentation/)
+
+### 5. Coupling with electomagnetic, structural and thermal simulation (2019)
+
+#### thermal-elastic-plastic coupling
+#### pip packaging 
+#### Travis CI integration
+
+## To cite this code
+
+My journal papers using this code will be published soon
 
 
 ## Acknowledgement

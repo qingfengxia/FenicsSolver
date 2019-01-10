@@ -24,7 +24,7 @@
 from __future__ import print_function, division
 
 from FenicsSolver.main import load_settings
-from FenicsSolver import ScalerTransportSolver
+from FenicsSolver import ScalarTransportSolver
 
 def test_elasticity():
     pass
@@ -52,7 +52,7 @@ def test_heat_transfer():
     anisotropic material, convective velociyt, see examples/test_*.py for more details
     """
     ###########################################
-    solver = ScalerTransportSolver.ScalerTransportSolver(settings)
+    solver = ScalarTransportSolver.ScalarTransportSolver(settings)
     solver.print()
     solver.solve()
     solver.plot()

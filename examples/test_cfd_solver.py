@@ -41,7 +41,7 @@ p_outlet = 1e5
 
 print("print dolfin.dolfin_version()", dolfin.dolfin_version())
 length_scale = 1
-max_vel=10 * length_scale
+max_vel=1 * length_scale
 
 def setup(using_elbow = True, using_3D = False, compressible=False):
     from mshr import Box, Rectangle, generate_mesh
@@ -167,8 +167,8 @@ def test_incompressible(using_elbow = True, coupling_energy_equation = True, New
         s['fe_degree'] = 1  # test failed, can not finish JIT
         Re = 10  # mesh is good enough to simulate higher Re
 
-    fluid = {'name': 'oil', 'kinematic_viscosity': (length_scale * max_vel)/Re, 'density': 800, 
-                'specific_heat_capacity': 4200, 'thermal_conductivity':  0.1, 'Newtonian': Newtonian}
+    fluid = {'name': 'gas', 'kinematic_viscosity': (length_scale * max_vel)/Re, 'density': 1, 
+                'specific_heat_capacity': 420, 'thermal_conductivity':  0.1, 'Newtonian': Newtonian}
     s['material'] = fluid
 
     # Re=10 is working without G2, when Re=1e-3 got NaN error, it is not clear why
@@ -187,8 +187,8 @@ def test_incompressible(using_elbow = True, coupling_energy_equation = True, New
         solver.plot()
 
     if not coupling_energy_equation and False:  # not fully tested
-        from FenicsSolver import  ScalerTransportSolver
-        solver_T = ScalerTransportSolver.ScalerTransportSolver(s)
+        from FenicsSolver import  ScalarTransportSolver
+        solver_T = ScalarTransportSolver.ScalarTransportSolver(s)
         #Q = solver.function_space.sub(1)  # seem it is hard to share vel between. u is vectorFunction
         Q = solver_T.function_space
         cvel = VectorFunction(Q)

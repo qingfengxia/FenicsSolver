@@ -39,7 +39,7 @@ electric_permittivity_in_vacumm = 8.854187817e-12
 # thermal volumetric capacity = density * specific heat
 
 from .SolverBase import SolverBase, SolverError
-class ScalerTransportSolver(SolverBase):
+class ScalarTransportSolver(SolverBase):
     """  general scaler transportation (diffusion and advection) solver, exampled by Heat Transfer
     # 4 types of boundaries supported: math, physical 
     # body source unit:  W/m^3, apply to whole body/domain
@@ -61,6 +61,7 @@ class ScalerTransportSolver(SolverBase):
         self.using_diffusion_form = False  # diffusion form is simple in math, but not easy to deal with nonlinear material property
 
         self.nonlinear = False
+        self.nonlinear_material = True
         for v in self.material.values():
             if callable(v):  # fixedme: if other material properties are functions, it will be regarded as nonlinear
                 self.nonlinear = True
@@ -74,15 +75,19 @@ class ScalerTransportSolver(SolverBase):
         if 'capacity' in self.material:
             c = self.material['capacity']
         # if not found, calc it, otherwise, it is 
-        if self.scaler_name == "temperature":
-            c = self.material['density'] * self.material['specific_heat_capacity']
+        elif self.scaler_name == "temperature":
+            cp = self.material['specific_heat_capacity']
+            c = self.material['density'] * cp
         elif self.scaler_name == "electric_potential":
             c = electric_permittivity_in_vacumm
         elif self.scaler_name == "spicies_concentration":
             c = 1
         else:
             raise SolverError('material capacity property is not found for {}'.format(self.scaler_name))
-        if callable(c):
+        #print(type(c))
+        from inspect import isfunction
+        if isfunction(c):  # accept only function or lambda,  ulf.algebra.Product is also callable
+            self.nonlinear_material = True
             return c(T)
         return self.get_material_value(c)  # todo: deal with nonlinear material
 
@@ -97,12 +102,15 @@ class ScalerTransportSolver(SolverBase):
             c = self.material['diffusivity']
         else:
             raise SolverError('conductivity material property is not found for {}'.format(self.scaler_name))
-        if callable(c):
+
+        from inspect import isfunction  # dolfin.Funciton is also callable
+        if isfunction(c):
+            self.nonlinear_material = True
             return c(T)
         return self.get_material_value(c)  # todo: deal with nonlinear material
 
     def conductivity(self, T=None):
-        # TODO: nonlinear material:  c = function(T)
+        # nonlinear material:  c = function(T)
         if 'conductivity' in self.material:
             c = self.material['conductivity']
         elif self.scaler_name == "temperature":
@@ -113,7 +121,10 @@ class ScalerTransportSolver(SolverBase):
             c = self.material['diffusivity']
         else:
             c = self.diffusivity() * self.capacity()
-        if callable(c):
+        #print('conductivity', c)
+        from inspect import isfunction
+        if isfunction(c): 
+            self.nonlinear_material = True
             return c(T)
         return self.get_material_value(c)  # todo: deal with nonlinear material
 
@@ -130,7 +141,7 @@ class ScalerTransportSolver(SolverBase):
 
     def update_boundary_conditions(self, time_iter_, T, Tq, ds):
         # test_function is removed from integrals_N items, so SPUG residual can include boundary condition
-        capacity = self.capacity() # constant, experssion or tensor
+        capacity = self.capacity(T) # constant, experssion or tensor
 
         bcs = []
         integrals_N = []
@@ -170,9 +181,9 @@ class ScalerTransportSolver(SolverBase):
             elif bc['type'] == 'mixed' or bc['type'] == 'Robin':
                 T_bc = self.translate_value(bc['value'])
                 g = self.translate_value(bc['gradient'])
-                if self.using_diffusion_form:
+                if self.using_diffusion_form:  # solve T
                     integrals_N.append(g*Tq*ds(i))
-                else:
+                else:  # solver flux
                     integrals_N.append(capacity*g*Tq*ds(i))
                 dbc = DirichletBC(self.function_space, T_bc, self.boundary_facets, i)
                 bcs.append(dbc)
@@ -215,12 +226,15 @@ class ScalerTransportSolver(SolverBase):
         normal = FacetNormal(self.mesh)
 
         dx= Measure("dx", subdomain_data=self.subdomains)  # cells
-        ds= Measure("ds", subdomain_data=self.boundary_facets)
+        ds= Measure("ds", subdomain_data=self.boundary_facets)  #boundary cells
+        #dS = Measure("dS", subdomain_data=self.boundary_facets)  
 
-        conductivity = self.conductivity(T) # constant, experssion or tensor
+        conductivity = self.conductivity(T) # constant, experssion or tensor, function of T for nonlinear
+        print('conductivity = ', conductivity)
         capacity = self.capacity(T)  # density * specific capacity -> volumetrical capacity
-        diffusivity = self.diffusivity(T)  # diffusivity
-        #print(conductivity, capacity, diffusivity)
+        print('capacity = ', capacity)
+        #diffusivity = self.diffusivity(T)  # diffusivity not in used for this conductivity form
+        #print("diffusivity = ", diffusivity)
 
         # detection here, to deal with assigned velocity after solver intialization
         if not hasattr(self, 'convective_velocity'):  # if velocity is not directly assigned to the solver
@@ -260,12 +274,16 @@ class ScalerTransportSolver(SolverBase):
             Tq = T_test
 
         # poission equation, unified for all kind of variables
+        # it apply to nonlinear conductivity, which is a function of temperature
+        # d(conductivity)/ dT is ignored here
         def F_static(T, Tq):
             return  inner(conductivity * grad(T), grad(Tq))*dx
+
         if self.transient_settings['transient']:
             dt = self.get_time_step(time_iter_)
             theta = Constant(0.5) # Crank-Nicolson time scheme
             # Define time discretized equation, it depends on scaler type:  Energy, Species,
+            # FIXME: nonlinear capacity is not supported
             F = (1.0/dt)*inner(T-T_prev, Tq)*capacity*dx \
                    + theta*F_static(T, Tq) + (1.0-theta)*F_static(T_prev, Tq)  # FIXME:  check using T_0 or T_prev ?
         else:
@@ -280,11 +298,16 @@ class ScalerTransportSolver(SolverBase):
             F -= sum(bs_items)
 
         if self.convective_velocity:
-            F += inner(velocity, grad(T))*Tq*capacity*dx
+            if self.nonlinear_material:
+                F += inner(velocity, grad(T*capacity))*Tq*dx  # those 2 are equal
+                #F += inner(velocity, grad(T))*Tq*capacity*dx + inner(velocity, grad(T))*Tq*self.material['dc_dT']*T*dx
+            else:
+                F += inner(velocity, grad(T))*Tq*capacity*dx
             if ads['stabilization_method'] and ads['stabilization_method'] == 'IP':
                 print('solving convection by interior penalty stablization')
-                alpha = avg(Constant(ads['alpha']))
+                alpha = Constant(ads['alpha'])
                 F +=  alpha*avg(h)**2*inner(jump(grad(T),normal), jump(grad(Tq),normal))*capacity*dS
+                # http://www.karlin.mff.cuni.cz/~hron/fenics-tutorial/convection_diffusion/doc.html
             if ads['stabilization_method'] and ads['stabilization_method'] == 'SPUG' and SPUG_method == 1:
                 #https://fenicsproject.org/qa/6951/help-on-supg-method-in-the-advection-diffusion-demo/
                 if self.transient_settings['transient']:
@@ -306,7 +329,6 @@ class ScalerTransportSolver(SolverBase):
             #F -= inner(dot(velocity, normal), dot(grad(T), normal))*Tq*capacity*ds  # (1.0/ h**sigma) *
             F -= dot(dot(velocity, normal), T)*capacity*ds*Tq
 
-        #print(F)
         if self.scaler_name == "temperature":
             if ('radiation_settings' in self.settings and self.settings['radiation_settings']):
                 self.radiation_settings = self.settings['radiation_settings']
@@ -321,6 +343,9 @@ class ScalerTransportSolver(SolverBase):
                 self.nonlinear = True
                 F -= self.radiation_flux(T)*Tq*ds # for all surface, without considering view angle
         
+        #print(F)
+        if self.nonlinear_material:
+            self.nonlinear_material = True
         if self.nonlinear:
             F = action(F, T_current)  # API 1.0 still working ; newer API , replacing TrialFunction with Function for nonlinear 
             self.J = derivative(F, T_current, T)  # Gateaux derivative

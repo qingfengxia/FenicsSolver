@@ -28,18 +28,22 @@ import numpy as np
 from dolfin import *
 from mshr import *
 
+from config import is_interactive
+interactively = is_interactive()
 
-interactively = True
-using_DG_solver = False
 
 def defined(x):
     return x in locals() or x in globals()
 
+#info(parameters,True)  # list all parameters
+#parameters['plotting_backend'] = 'matplotlib'
+#parameters['std_out_all_processes'] = 0
 parameters['form_compiler']['cpp_optimize'] = True
 parameters['form_compiler']['optimize'] = True
 
 #######################################################
 has_convection = True
+using_DG_solver = False
 fe_degree = 1 # 2 is possible but use more memory
 vector_degree = fe_degree
 
@@ -105,7 +109,7 @@ v_e = Expression(("-(x[1]-0.5)","(x[0]-0.5)"), degree=vector_degree)  # works fo
 if has_convection:
     W = VectorFunctionSpace(mesh, 'CG', vector_degree)
     velocity = interpolate(v_e, W)
-    plot(velocity, title="velocity")
+    plot(velocity, title="velocity")  # matplotlib 
 
 T_hot = 360
 T_cold = 300
@@ -130,7 +134,7 @@ bcs = {
                 } },
 }
 
-settings = {'solver_name': 'ScalerTransportSolver',
+settings = {'solver_name': 'ScalarTransportSolver',
             'mesh': mesh, 'periodic_boundary': None, 'fe_degree': fe_degree,
             'boundary_conditions': bcs,
             'body_source': heat_source,  # there must be a source for DG solver
@@ -156,13 +160,15 @@ if using_DG_solver:
     solver = ScalerTransportDGSolver(settings)
     #velocity = interpolate(v_e, solver.vector_function_space)
 else:
-    settings['advection_settings'] = {'stabilization_method': 'SPUG', 'Pe': 1.0/(15.0/(4200*1000))}
-    # it is possible to use SPUG (not rotating velocity),  with and without body source
+    #settings['advection_settings'] = {'stabilization_method': 'SPUG', 'Pe': 1.0/(15.0/(4200*1000))}
+    # SPUG method 1 has on effect, compared with no stabilization_method???
+    # it is possible to use SPUG (with rotating velocity),  with and without body source
     # with body source, SPUG and IP give different result temperature field!!!
-    settings['advection_settings'] = {'stabilization_method': 'IP', 'alpha': 0.1}
+    #settings['advection_settings'] = {'stabilization_method': 'IP', 'alpha': 0.1}
+    #result can be sensitive to alpha value!!!
     #without any stabilization_method, solver will not get correct answer
-    from FenicsSolver.ScalerTransportSolver import ScalerTransportSolver
-    solver = ScalerTransportSolver(settings)
+    from FenicsSolver.ScalarTransportSolver import ScalarTransportSolver
+    solver = ScalarTransportSolver(settings)
 
 
 plot(mesh, title="mesh")

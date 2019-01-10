@@ -74,9 +74,9 @@ def main(case_input):
         import CoupledNavierStokesSolver
         solver = CoupledNavierStokesSolver.CoupledNavierStokesSolver(settings)
         solver.solve()
-    elif solver_name == "ScalerTransportSolver":
+    elif solver_name == "ScalarTransportSolver":
         import ScalerEquationSolver
-        solver = ScalerTransportSolver.ScalerTransportSolver(settings)
+        solver = ScalarTransportSolver.ScalarTransportSolver(settings)
         solver.solve()
     elif solver_name == "LinearElasticitySolver":
         import LinearElasticitySolver

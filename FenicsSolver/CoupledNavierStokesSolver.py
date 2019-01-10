@@ -73,6 +73,7 @@ class CoupledNavierStokesSolver(SolverBase):
         # init and reference must be provided by case setup
 
         self.using_nonlinear_solver = True
+        #self.settings['solver_name'] = "CoupledNavierStokesSolver"
         if self.solving_temperature:
             self.settings['mixed_variable'] = ('velocity', 'pressure', 'temperature')
         else:
@@ -127,7 +128,7 @@ class CoupledNavierStokesSolver(SolverBase):
 
     def get_initial_field(self):
         # assume: velocity is a tupe of constant, or string expression, or a function of the mixed functionspace
-        print(self.initial_values)
+        print("self.initial_values = ", self.initial_values)
 
         if isinstance(self.initial_values, (Function,)):
             try:
@@ -203,7 +204,7 @@ class CoupledNavierStokesSolver(SolverBase):
             else:
                 u,p = split(current_w)
                 _nu = self.material['kinematic_viscosity']
-                _nu = _nu * pow(p/self.reference_values['pressure'], 0.2)
+                _nu = _nu * pow(p/self.reference_values['pressure'], 0.1)
         else:
             _nu = self.material['kinematic_viscosity']
             #if isinstance(_nu, (Constant, numbers.Number)):
@@ -223,7 +224,7 @@ class CoupledNavierStokesSolver(SolverBase):
         # Define unknown and test function(s)
 
         ## weak form
-        if self.transient:  # temporal scheme
+        if self.transient_settings['transient']:  # temporal scheme
             F = self.F_transient(time_iter_, trial_function, test_function, up_current, up_prev)
         else:
             F = self.F_static(trial_function, test_function, up_current)
@@ -263,8 +264,8 @@ class CoupledNavierStokesSolver(SolverBase):
             #Tsettings['body_source'] = # incomplate form?
             import pprint
             pprint.pprint(Tsettings)
-            from FenicsSolver import  ScalerTransportSolver
-            Tsolver = ScalerTransportSolver.ScalerTransportSolver(Tsettings)
+            from FenicsSolver import  ScalarTransportSolver
+            Tsolver = ScalarTransportSolver.ScalarTransportSolver(Tsettings)
             #Tsover.is_mixed_function_space = False
             
             #print('type(u_current)', u_current, type(u_current))  # ufl.tensors.ListTensor
@@ -303,16 +304,18 @@ class CoupledNavierStokesSolver(SolverBase):
         else:  # using Picard loop    FIXME: crank-nicolis scheme 
         '''
         advection_velocity = u_0 # u_0 is the current value to be solved for steady case
-        nu = self.viscosity(up_0)
+        nu = self.viscosity(up_0) # 
+        mu = nu*self.material['density']
+        rho = self.material['density']
         #plot(nu, title = 'viscosity')  # all zero
         #import matplotlib.pyplot as plt
         #plt.show()
 
-        # Define Form for the static Stokes Coupled equation,
+        # Define Form for the static Stokes Coupled equation,  divided by rho on both sides
         F = nu * 2.0*inner(epsilon(u), epsilon(v))*dx \
-            - p*div(v)*dx \
-            + div(u)*q*dx
-        if self.settings['body_source']:
+            - (p/rho)*div(v)*dx \
+            + div(u)*(q)*dx  # comes from incomperssible flow equation, diveded by rho?
+        if self.settings['body_source']:   # just gravity, without * rho
             F -= inner(self.get_body_source(), v)*dx
 
         if 'reference_frame_settings' in self.settings:
@@ -457,7 +460,7 @@ class CoupledNavierStokesSolver(SolverBase):
                     else:
                         print('pressure boundary type`{}` is not supported thus ignored'.format(bc['type']))
 
-                elif bc['variable'] == 'temperature':  # TODO: how to share code and boundary setup with ScalerTransportSolver
+                elif bc['variable'] == 'temperature':  # TODO: how to share code and boundary setup with ScalarTransportSolver
                     if self.compressible:  # used by compressible NS solver
                         bvalue = self.translate_value(bc['value'])
                         if bc['type'] == 'Dirichlet':
@@ -489,10 +492,7 @@ class CoupledNavierStokesSolver(SolverBase):
     def solve_form(self, F, up_, Dirichlet_bcs_up):
         # only for static case?
         if self.using_nonlinear_solver:
-            problem = NonlinearVariationalProblem(F, up_, Dirichlet_bcs_up, self.J)
-            solver  = NonlinearVariationalSolver(problem)
-            solver.solve()
-            return up_
+            return self.solve_nonlinear_problem(F, up_, Dirichlet_bcs_up, self.J)
         else:        # Solve Navier-Stokes problem with Picard method
             iter_ = 0
             max_iter = 50
@@ -510,7 +510,8 @@ class CoupledNavierStokesSolver(SolverBase):
                 # other solving methods
                 up_ = self.solve_linear_problem(F, up_, Dirichlet_bcs_up)
                 #  AMG is not working with mixed function space
-
+                
+                #limiting result value, if the problem is highly nonlinear
                 diff_up = up_.vector().array() - up_temp.vector().array()
                 eps = np.linalg.norm(diff_up, ord=np.Inf)
 

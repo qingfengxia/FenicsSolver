@@ -30,7 +30,7 @@ Feature: provide basic shared methods like translate_value(), build mesh and fun
 'transient_settings'
 + default to fixed time step, specifying `time_step`, can specify a numpy.array of time_points
 + temporal differentiation
-    - Crank-Nicolson (2nd , unconditionally stable for diffusion problem) for ScalerTransportSolver
+    - Crank-Nicolson (2nd , unconditionally stable for diffusion problem) for ScalarTransportSolver
     - NS function, backward Euler for the time being.
     
 """
@@ -362,7 +362,7 @@ class SolverBase():
             # FIXME can not interpolate an expression, not necessary?
             values_0 = value  # interpolate(value, W)
         elif callable(value) and self.transient_settings['transient']:  # Function is also callable
-            values_0 = Constant(value(self.get_current_time()))
+            values_0 = value(self.get_current_time())
         elif isinstance(value, (str, )):  # file or string expression
             if os.path.exists(value):
                 # also possible continue from existent solution, or interpolate from diff mesh density
@@ -459,10 +459,20 @@ class SolverBase():
         self.w_current = self.get_initial_field()  # init to default or user provided constant
         self.w_prev = Function(self.function_space)
         self.w_prev.assign(self.w_current)
+        self.w_pp = Function(self.function_space)  # previous previous value, for dynamic and high order temporal scheme
+        self.w_pp.assign(self.w_current)
+
+    def get_acceleration(self, time_iter_):
+        # FIXME:  it does not works for non-uniform time step
+        assert time_iter_ >= 1  # acceleration can only be calc since the second step
+        vel = Constant(1 / self.get_time_step(time_iter_)) * (self.w_current - self.w_prev)
+        vel_prev = Constant(1 / self.get_time_step(time_iter_ - 1)) * (self.w_prev - self.w_pp)
+        return (vel - vel_prev) / Constant(1 / self.get_time_step(time_iter_))
 
     def solve_current_step(self):
         # only NS equation needs current value to build form
         F, Dirichlet_bcs_up = self.generate_form(self.current_step, self.trial_function, self.test_function, self.w_current, self.w_prev)
+        self.w_pp.assign(self.w_prev)
         self.w_prev.assign(self.w_current)
         self.w_current = self.solve_form(F, self.w_current, Dirichlet_bcs_up)  # solve for each time step, up_prev tis not needed
         self.result = self.w_current
@@ -585,10 +595,12 @@ class SolverBase():
         problem = NonlinearVariationalProblem(F, u_current, Dirichlet_bcs, J)
         solver = NonlinearVariationalSolver(problem)
 
-        #TODO: set nonlinear solver parameters from settings dict
+        #TODO: set nonlinear solver parameters from settings dict, same option as linear solver?
         #[print(p) for p in solver.parameters['newton_solver']]
-        solver.parameters['newton_solver']['maximum_iterations'] = 500
-        solver.parameters['newton_solver']['relaxation_parameter'] = 0.1
+        #solver.parameters['newton_solver']['maximum_iterations'] = 50
+        #solver.parameters['newton_solver']['relaxation_parameter'] = 0.1
+
+        self.set_solver_parameters(solver)
 
         solver.solve()
         return u_current

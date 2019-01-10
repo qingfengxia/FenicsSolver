@@ -26,9 +26,10 @@ import numpy as np
 
 from dolfin import *
 
-from FenicsSolver.ScalerTransportSolver import ScalerTransportSolver
+from FenicsSolver.ScalarTransportSolver import ScalarTransportSolver
 
-interactively = False
+from config import is_interactive
+interactively = is_interactive()
 
 #mesh = UnitCubeMesh(20, 20, 20)
 mesh = UnitSquareMesh(40, 40)
@@ -76,7 +77,7 @@ bcs = {
         #back and front is zero gradient, need not set, it is default
 }
 
-settings = {'solver_name': 'ScalerTransportSolver',
+settings = {'solver_name': 'ScalarTransportSolver',
                 'mesh': None, 'function_space': Q, 'periodic_boundary': None, 'element_degree': 1,
                 'boundary_conditions': bcs, 'body_source': None, 
                 'initial_values': {'electric_potential': V_ground},
@@ -111,15 +112,17 @@ def test():
         settings['convective_velocity'] =  Constant((0.5, -0.5))
     else:
         settings['convective_velocity'] = None
-    solver = ScalerTransportSolver(settings)
+    solver = ScalarTransportSolver(settings)
     #debugging: show boundary selection
     plot(solver.boundary_facets, "boundary facets colored by ID")
     plot(solver.subdomains, "subdomain cells colored by ID")
 
     T = solver.solve()
-    post_process(T, interactively)
+    post_process(T)
+    if interactively:
+        solver.plot()
 
-def post_process(T, interactively):
+def post_process(T):
     # Report flux, they should match
     normal = FacetNormal(mesh)
     boundary_facets = FacetFunction('size_t', mesh)
@@ -132,9 +135,6 @@ def post_process(T, interactively):
     print("integral on the top surface(A)", flux)
 
     plot(T, title='electric Potential (V)')
-    #plot(mesh)
-    if interactively:
-        solver.plot()
 
 if __name__ == '__main__':
     test()

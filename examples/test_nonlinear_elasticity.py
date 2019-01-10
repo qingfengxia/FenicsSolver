@@ -29,7 +29,8 @@ from FenicsSolver import LinearElasticitySolver
 from FenicsSolver import NonlinearElasticitySolver
 from FenicsSolver import SolverBase
 
-interactively = True
+from config import is_interactive
+interactively = is_interactive()
 set_log_level(ERROR)
 
 def test():
