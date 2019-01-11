@@ -35,12 +35,13 @@ import math
 import copy
 import numpy as np
 
+from config import is_interactive
+interactively = is_interactive()  # manual set it False to debug solver
+
 from dolfin import *
 from mshr import *
 from FenicsSolver import SolverBase
 
-from config import is_interactive
-interactively = is_interactive()
 
 using_fenics_solver = True
 using_segegrate_solver = not using_fenics_solver

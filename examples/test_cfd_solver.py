@@ -27,11 +27,11 @@ import math
 import copy
 import numpy as np
 
-from dolfin import *
-from FenicsSolver import SolverBase
-
 from config import is_interactive
 interactively = is_interactive()
+
+from dolfin import *
+from FenicsSolver import SolverBase
 
 transient = False
 T_ambient =300

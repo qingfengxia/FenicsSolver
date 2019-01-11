@@ -24,13 +24,13 @@ from __future__ import print_function, division
 import math
 import numpy as np
 
+from config import is_interactive
+interactively = is_interactive()  # manual set it False to debug solver
+
 from dolfin import *
+set_log_level(ERROR)
 from FenicsSolver import LinearElasticitySolver
 from FenicsSolver import SolverBase
-set_log_level(ERROR)
-
-from config import is_interactive
-interactively = is_interactive()
 
 def test(has_thermal_stress, has_body_source, transient = False, boundary_type = 1):
     #has_body_source to test gravity as body source
@@ -165,4 +165,4 @@ if __name__ == '__main__':
     test(has_thermal_stress = True, has_body_source=True)
     test(has_thermal_stress = False, has_body_source=True)
     test(has_thermal_stress = True, has_body_source=False)
-    test(has_thermal_stress = False, has_body_source=False)
+    test(has_thermal_stress = False, has_body_source=False)  #failed! Error:   Unable to creating dolfin.Form.

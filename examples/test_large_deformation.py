@@ -25,12 +25,13 @@
 import math
 import numpy as np
 
+from config import is_interactive
+interactively = is_interactive()  # manual set it False to debug solver
+
 from dolfin import *
 from FenicsSolver.LargeDeformationSolver import LargeDeformationSolver
 from FenicsSolver import SolverBase
 
-from config import is_interactive
-interactively = is_interactive()
 
 def solve_elasticity(using_2d, length, E, nu, dt, t_end, dirname):
     """Prepares 2D geometry. Returns facet function with 1, 2 on parts of  the boundary."""

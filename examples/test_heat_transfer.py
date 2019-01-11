@@ -24,11 +24,11 @@ from __future__ import print_function, division
 import math
 import numpy as np
 
-from dolfin import *
-from FenicsSolver.ScalarTransportSolver  import ScalarTransportSolver
-
 from config import is_interactive
 interactively = is_interactive()
+
+from dolfin import *
+from FenicsSolver.ScalarTransportSolver  import ScalarTransportSolver
 
 #mesh = UnitCubeMesh(20, 20, 20)
 mesh = UnitSquareMesh(40, 40)

@@ -26,7 +26,12 @@ import json
 import sys
 import os.path
 
-"To cope with different python versions for FreeCAD and Fenics, running as an external program"
+"""To cope with different python versions for FreeCAD and Fenics, running as an external program
+python2 and python3 compatible
+"""
+
+if sys.version_info[0] >= 3:
+    unicode = str
 
 _encoding = 'ascii'
 def _decode_list(data):
@@ -43,7 +48,8 @@ def _decode_list(data):
 
 def _decode_dict(data):
     rv = {}
-    for key, value in data.iteritems():
+    for key in data:
+        value = data[key]
         if isinstance(key, unicode):
             key = key.encode(_encoding)
         if isinstance(value, unicode):
