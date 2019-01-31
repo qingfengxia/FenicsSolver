@@ -69,6 +69,11 @@ class NonlinearElasticitySolver(LinearElasticitySolver):
         Pi = psi*dx 
         #- dot(T, u_current)*ds      # Traction force on the boundary
         # Dirichlet boundary, just as LinearElasticitySolver
+
+        # how about kinematic energy, only for dynamic process vibration
+        if self.transient_settings['transient']:
+            vel = (u_current - u_prev) /dt
+            Pi += 0.5*vel*vel*dx  # not yet tested code!
         
         if self.body_source:
             Pi -= dot(self.body_source, u_current)*dx
@@ -81,9 +86,6 @@ class NonlinearElasticitySolver(LinearElasticitySolver):
         # Assemble system, applying boundary conditions and extra items
         if len(integrals_F):
             for item in integrals_F: Pi -= item
-
-        #if 'surface_source' in self.settings and self.settings['surface_source']:
-        #    Pi -= dot(self.settings['surface_source'], u_current)*ds
 
         # Compute first variation of Pi (directional derivative about u in the direction of v)
         F = derivative(Pi, u_current, v)

@@ -30,7 +30,9 @@ from .SolverBase import SolverBase, SolverError
 
 class LargeDeformationSolver(NonlinearElasticitySolver):
     """ 
-    adapted from: http://www.karlin.mff.cuni.cz/~blechta/fenics-tutorial/elasticity/doc.html   
+    adapted from: http://www.karlin.mff.cuni.cz/~blechta/fenics-tutorial/elasticity/doc.html
+    velocity is not vertex velocity! 
+    kinematic energy is not added
     """
     def __init__(self, case_settings):
         NonlinearElasticitySolver.__init__(self, case_settings)
@@ -53,8 +55,24 @@ class LargeDeformationSolver(NonlinearElasticitySolver):
         else:
             self.function_space = FunctionSpace(self.mesh, mixed_element)
 
+    '''
+    def get_initial_field(self):
+        # assume:  all constant, velocity is a tupe of constant
+        #_initial_values = []
+        #_initial_values.append(self.dimension*(0.0,))
+        #_initial_values.append(self.dimension*(0.0,))  # self.initial_values['velocity']
+        # _initial_values.append(0.0)
+        _initial_values = (self.dimension*2+1)*(0.0,)
+        _expr = tuple([str(v) for v in _initial_values])
+        print(_expr)
+        _initial_values_expr = Expression( _expr, degree = self.settings['fe_degree'])
+        up0 = interpolate(_initial_values_expr, self.function_space)
+        return up0
+    '''
+
     def get_flux(self, u, mag_vector): 
         F = Identity(self.dimension) + grad(u)
+        print("mag_vector", mag_vector)
         return det(F)*dot(inv(F).T, mag_vector)
 
     def generate_form(self, time_iter_, w_trial, w_test, w_current, w_prev):
@@ -111,6 +129,7 @@ class LargeDeformationSolver(NonlinearElasticitySolver):
         bcs, integrals_F = self.update_boundary_conditions(time_iter_, u, _v, ds)
         if time_iter_==0:
             plot(self.boundary_facets, title = "boundary facets colored by ID")
+            #interactive()
 
         if self.body_source:
             integrals_F.append(inner(self.body_source, _v)*dx )
@@ -126,12 +145,23 @@ class LargeDeformationSolver(NonlinearElasticitySolver):
         self.J = derivative(F, w_current)
         return F, bcs
 
-    def solve_current_step(self, trial_function, test_function, w_current, w_prev):
-        F, Dirichlet_bcs = self.generate_form(self.current_step, trial_function, test_function, w_current, w_prev)
-        #up_current = self.solve_static(F, up_current, Dirichlet_bcs_up)  # solve for each time step, up_prev tis not needed
-        solve(F==0, w_current, Dirichlet_bcs, J=self.J, 
-                solver_parameters={"newton_solver":{"linear_solver":"mumps","absolute_tolerance":1e-9,"relative_tolerance":1e-7}})
-        w_prev.assign(w_current)
+    def solve_form(self, F, u_, bcs):
+        solve(F == 0, u_, bcs, J=self.J,
+                    solver_parameters={"newton_solver":{"linear_solver":"mumps","absolute_tolerance":1e-9,"relative_tolerance":1e-7}})
+        return u_
+
+    def displacement(self):
+        if self.is_mixed_function_space:
+            u_, v_, p_ = split(self.w_current)  
+            return u_  # large deformation function space:  disp, vel, pressure
+
+    def velocity(self):
+        dt = self.get_time_step(self.current_step)
+        if self.is_mixed_function_space:
+            u_, v_, p_  = split(self.w_current)
+            #return v_  # large deformation function space:  disp, vel, pressure, velocity not correct
+            u0_, v0_, p0_  = split(self.w_prev)
+            return (u_ - u0_)/Constant(dt)
 
     def plot_result(self):
         # Extract solution components and rename

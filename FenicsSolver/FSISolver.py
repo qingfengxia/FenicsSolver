@@ -1,20 +1,20 @@
-# private confidential code, qingfeng Xia 2018
+# not yet fully tested code,
+# copyright qingfeng Xia 2018
 
 """
-see a reference
-        # provide mesh then submeshes!
-        # load mesh,  SolverBase, and detect matching interfaces
-        # modify solver setting and create solvers (as a ordered list)
 
-reinit fluid-solver,  to update test trial,    solve_transient() 
-w_current, w_prev need also project/numpy array assignment, 
+#How it works:
+1.  provide mesh with fluid and solid submeshes, 
+2. coupled solver will detect matching interfaces, modify solver setting (boundary condition)
+3. create participant solvers (as a ordered list)
+4. solve the fluid first, , setup solid boundary condition (traction force) for solid solver, no need to move mesh for solid solver
+5. move mesh for fluid solver,  w_current, w_prev need to be in different function space, in order to save deformed mesh and data
 
-serial mapping only
-relaxation
-save deformed mesh and data 
-higher Re fluid solver
-
-multiple frictional contact
+Limitations:
+- serial mapping only
+- no movement relaxation
+- no higher Re fluid solver
+- will not support multiple frictional contact
 
 """
 
@@ -114,7 +114,7 @@ class CoupledSolver():
             if len(ts) >= time_iter_:
                 dt = ts[time_iter_] - ts[time_iter_]
             else:
-                print('time step can only be a sequence or scaler')
+                print('time step can only be a sequence or scalar')
         #self.mesh.hmin()  # Compute minimum cell diameter. courant number
         return dt
 
@@ -196,7 +196,7 @@ class FSISolver(CoupledSolver):
         self.solid_v2d = v2d.reshape((-1, self.solid_solver.dimension))
         #print('self.solid_v2d = ', self.solid_v2d)
 
-        # for scaler, vertex = numpy array
+        # for scalar, vertex = numpy array
         v2d = vertex_to_dof_map(self.fluid_V1)  #vector degree 1
         self.fluid_v2d = v2d.reshape((-1, self.fluid_solver.dimension))
         #print('self.fluid_v2d = ', self.fluid_v2d)

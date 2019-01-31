@@ -160,7 +160,7 @@ class LinearElasticitySolver(SolverBase):
                     direction_vector = mesh_normal
                 integrals_N.append(dot(self.get_flux(u, direction_vector*g), v)*ds(i))
             elif bc['type'] == 'pressure':
-                # scaler, normal to boundary surface, or by a given direction vector
+                # scalar, normal to boundary surface, or by a given direction vector
                 if 'direction' in bc and bc['direction']:
                     direction_vector = bc['direction']
                 else:
