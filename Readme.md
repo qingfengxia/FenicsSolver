@@ -1,6 +1,11 @@
-# Multiphysics solver based on Fenics
+# Multiphysics FEM solver based on Fenics
 
-by Qingfeng Xia, 2017
+by Qingfeng Xia, 2017~
+
+This is derived from my personal independent research, although I am not yet financially independent in the University of Oxford. This solver has features beyond commercial commercial solvers, in its capability to solve multibody, multiphysics, multiscale and reduced-order nonlinear problems.
+This software project is an essential part of my research ambition in *Measurement and modelling at extreme conditions* and *Automated and intelligient engineering design*.
+
+![Schematic of automated engineering design pipeline](https://forum.freecadweb.org/download/file.php?id=73587)
 
 ## License
 
@@ -8,11 +13,12 @@ LGPL licensed as [FreeCAD]<https://github.com/FreeCAD/FreeCAD> and [fenics-proje
 
 ## Screenshot
 
-![FenicsSolver as a CFD solver in CfdWorkbench of FreeCAD](FenicsSolver_FreeCAD.png?raw=true "FenicsSolver as a CFD solver in CfdWorkbench of FreeCAD")
+![FenicsSolver as a FEM solver in CfdWorkbench of FreeCAD](FenicsSolver_FreeCAD.png?raw=true "FenicsSolver as a CFD solver in CfdWorkbench of FreeCAD")
 
 ## Description
 
-A set of multi-physics FEM solvers based on Fenics with GUI support(via integration Fenics into FreeCAD FemWorkbench and CfdWorkbench), focusing on multi-body, reduced-order nonlinear problem and mutlti-solver coupling.It functions like COMSOL or Moose, but it is free and it is made of Python.
+A set of multi-physics FEM solvers based on Fenics with GUI support(via integration Fenics into FreeCAD FemWorkbench and CfdWorkbench),
+focusing on multi-body, reduced-order nonlinear problem and mutlti-solver coupling.It functions like COMSOL or Moose, but it is free and it is made of Python.
 
 + Solvers implemented:
   - ScalarTransport (heat transfer, mass transfer, electric potential, etc)
@@ -33,12 +39,19 @@ A set of multi-physics FEM solvers based on Fenics with GUI support(via integrat
 
 + Coupling to external solvers:
   - turbulent flow and multiphase flow will be implemented by coupled to external CFD solver, OpenFOAM.
-
+  - see the sister project OpenFOAM preprocessor within FreeCAD Cfd workbench <https://github.com/qingfengxia/Cfd>
 
 
 ## Installation
 
 It is python2 and python3 compatible, just as fenics itself. For Fenics version 2017.2 on ubuntu, Python3 is recommended, since there is some binary string/unicode problem in Python 2. Fenics 2017.2 also remove VTK plotting, and most of plotting in FenicsSolver examples are ignored.
+
+general installation guide on Linux: <https://fenicsproject.org/docs/dolfin/dev/python/installation.html>
+link to install lastest Fenics via PPA on ubuntu: <https://launchpad.net/~fenics-packages/+archive/ubuntu/fenics>
+```
+sudo add-apt-repository ppa:fenics-packages/fenics
+sudo apt-get update
+```
 
 copy this folder to any place on the python search path (PYTHON_PATH), assuming fenics has been installed. 
 
@@ -46,7 +59,11 @@ copy this folder to any place on the python search path (PYTHON_PATH), assuming 
 git clone https://github.com/qingfengxia/FenicsSolver.git
 ```
 
-installation via PIP will be implemented later once API is stable. 
+installation via PIP will be implemented later once API is stable, but an early preview v0.1 could be privided
+```
+#make sure you have install Fenics, then install by pip or pip3
+sudo pip install FenicsSolver
+```
 
 ## Testing
 
@@ -99,8 +116,9 @@ a video/presentation of my *13th OpenFOAM Workshop* presentation can be found he
 
 ## To cite this code
 
-My journal papers using this code will be published soon
-
+My journal papers using this code
+1. [Quasi-static modelling for high speed metal cutting](), paper submitted, source code has been uploaded to <https://github.com/qingfengxia/quasi_static_metal_cutting>
+2. [Quasi-static thermal modelling of multi-scale sliding contact for unlubricated brush seal materials](http://proceedings.asmedigitalcollection.asme.org/proceeding.aspx?articleid=2701103), now accepted to "ASME Journal of Gas Turbine and Power"
 
 ## Acknowledgement
 
