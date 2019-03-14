@@ -1,45 +1,30 @@
 dist: xenial
-#dist: xenial is not supported before Nov 2018, python2 is the default for trusty
+# xenial is not supported before Nov 2018,  but trusty is still the default, python2
 # https://blog.travis-ci.com/2018-11-08-xenial-release
-# docker is another way to test out this FenicsSolver
+# docker is another way to test out this FenicsSolver, there is no needed to specify a dist
 
 sudo: required
 language: python
 python:
 - '2.7'
 
-# xenial  has a different way of installing from PPA
-addons:
-  apt:
-    sources:
-    - ppa:fenics-packages/fenics
-    packages:
-      - fenics 
-      - python-dolfin
+services:
+- docker
+
+before_install:
+- curl -s "https://get.fenicsproject.org" | bash
 
 install:
-- sudo apt-get update -q
-- if [[ $TRAVIS_PYTHON_VERSION == '2.7' ]]; then travis_retry sudo apt-get install
-  -y python-matplotlib python-numpy git; fi
-- if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then travis_retry sudo apt-get install
-  -y python3-matplotlib python3-numpy git; fi
 # install the package to be tested
-- python -c 'import dolfin; print("Fenics version", dolfin.dolfin_version())'
 - echo "current working dir is $(pwd)"
 - git clone https://github.com/qingfengxia/FenicsSolver.git
 - cd FenicsSolver
 - travis_retry sudo python setup.py install
-
-script:
 - pwd
-- if  [ -d 'examples' ] ; then cd examples && python run_all_tests.py; fi
-# build the wheel 
-- python setup.py bdist_wheel
+- if  [ -d 'examples' ] ; then cd examples; fi
 
-
-# my pypi upload does not work even with CLI
-deploy:
-  provider: pypi
-  user: qingfeng.xia
-  password:
-    secure: M/s6AFn6GXE0UCZyiMJ0C+lZSmtdo/BYmkx0CrsJDt/Tfov50i1vnVAw25kHctY0M3wSUFCCwcsy443P2rkjpk1UtxvUnbWIKa3wf5BuGeWznA3AHaG26t6OA7O7G3GkgVAHsypqKtnDaSaxFxgYeMcxH4HlB8jw39q4lAhjyMrRmqYZjks8dhCAbCxoMnIP9phUm3sXvy3gJYI8wirP8JBERI2b9v2VFwMC1v3ZO4hhr/90GiVGjzvckXONlc4PK3pJGDZYWvlGa2mSp1qg1vHED/FofUCrMOyDMiZevzLLSBFzmK24d8Qu45bYHbIJU3ugJurBLwuUdK/RWntE7WUZW1M9NewS2E6Uvrx2u1nqjf9RHsdsGCVTt2KnnVSl7ys3w7Ka7yfKSk+gjD34Hyjk63ULepGWfpp4dvWpbu7JyqUWHojt1xMKHZf3y7FSjbMqaJ7Ee8t4Z78c5uRRMxU9c80LI1H6NXTds4DN5XYTPr7CeA7QucLW/WOt2QvRWUaEwKb9K/VTbRf1RDqK0rHe8hEOBKuz6P+R6UK6PqGFPiZmW9vEr3vQh9CqrbiMc0PdfATtaXFCay4gPoI2FvOoE7Bt+1R20kOi7XPb7Kg5zTAd/ve5ZcAHragcque1XelVmQ+COw1oLrgO507UHoO06jYcNzbjQW/FY4Qx/Rc=
+# no need to run in interactive mode `-it`
+script:
+- echo "current working dir is $(pwd)"
+- docker run -p 127.0.0.1:8000:8000 -v $(pwd):/home/fenics/shared -w /home/fenics/shared quay.io/fenicsproject/stable:current -c "pwd"
+- docker exec  quay.io/fenicsproject/stable:current "python run_all_tests.py"
