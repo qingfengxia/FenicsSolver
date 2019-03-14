@@ -67,7 +67,6 @@ setup(
     # You can just specify the packages manually here if your project is simple. Or you can use find_packages().
     # there must be a subfolder in the git repo root
     packages=find_packages(where='.', exclude=['contrib', 'docs', 'tests']),
-
     # Alternatively, if you want to distribute just a my_module.py, uncomment this:
 
     # List run-time dependencies here.  These will be installed by pip when
@@ -81,7 +80,7 @@ setup(
     # for example:
     # $ pip install -e .[dev,test]
     extras_require={
-        'dev': ['vtk'],  # dolfin requires a lot of packages, this package does not introduce any new dependencies
+        'dev': [],  # dolfin requires a lot of packages, this package does not introduce any new dependencies
         'test': ['unittest'],
     },
 
@@ -103,7 +102,7 @@ setup(
     # pip to create the appropriate form of executable for the target platform.
     entry_points={
         'console_scripts': [
-            'main=main',
+            'main=main.py',
         ],
     },
 )

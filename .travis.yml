@@ -1,22 +1,43 @@
-dist: trusty
-#dist: xenial is not supported, python2 is the default for trusty
-# while fenics PPA for fenics does not support trusty, test is commented out
+dist: xenial
+#dist: xenial is not supported before Nov 2018, python2 is the default for trusty
+# https://blog.travis-ci.com/2018-11-08-xenial-release
+# docker is another way to test out this FenicsSolver
+
 sudo: required
 language: python
 python:
 - '2.7'
+
+# xenial  has a different way of installing from PPA
+addons:
+  apt:
+    sources:
+    - ppa:fenics-packages/fenics
+    packages:
+      - fenics 
+      - python-dolfin
+
 install:
-- sudo add-apt-repository ppa:fenics-packages/fenics -y
 - sudo apt-get update -q
 - if [[ $TRAVIS_PYTHON_VERSION == '2.7' ]]; then travis_retry sudo apt-get install
-  -y fenics python-dolfin python-matplotlib python-numpy; fi
+  -y python-matplotlib python-numpy git; fi
 - if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then travis_retry sudo apt-get install
-  -y fenics python3-dolfin python3-matplotlib python3-numpy; fi
+  -y python3-matplotlib python3-numpy git; fi
+# install the package to be tested
+- python -c 'import dolfin; print("Fenics version", dolfin.dolfin_version())'
+- echo "current working dir is $(pwd)"
+- git clone https://github.com/qingfengxia/FenicsSolver.git
+- cd FenicsSolver
 - travis_retry sudo python setup.py install
+
 script:
 - pwd
-- if  [ -d 'examples' ] ; then cd examples; fi
+- if  [ -d 'examples' ] ; then cd examples && python run_all_tests.py; fi
+# build the wheel 
+- python setup.py bdist_wheel
 
+
+# my pypi upload does not work even with CLI
 deploy:
   provider: pypi
   user: qingfeng.xia
