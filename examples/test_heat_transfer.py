@@ -48,8 +48,8 @@ T_hot = 360
 T_cold = 300
 T_ambient = 300
 
-nonlinear = True
-if nonlinear:
+nonlinear = False
+if not nonlinear:
     conductivity = 0.6
 else:
     conductivity = lambda T: (T-T_ambient)/T_ambient * 0.6
@@ -70,7 +70,7 @@ bcs = {
         #back and front is zero gradient, need not set, it is default
 }
 
-settings = {'solver_name': 'ScalerEquationSolver',
+settings = {'solver_name': 'ScalarEquationSolver',
                 'mesh': None, 'function_space': Q, 'periodic_boundary': None, 'fe_degree': 1,
                 'boundary_conditions': bcs,
                 'body_source': None,
@@ -173,12 +173,14 @@ def setup(using_anisotropic_conductivity, using_convective_velocity, using_DG_so
     plot(solver.subdomains, title="subdomain cells colored by ID")
 
     T = solver.solve()
-    post_process(T, interactively)
+    post_process(T)
+    if interactively:
+        solver.plot()
 
-def post_process(T, interactively):
+def post_process(T):
     # Report flux, they should match
     normal = FacetNormal(mesh)
-    boundary_facets = FacetFunction('size_t', mesh)
+    boundary_facets = MeshFunction('size_t', mesh, mesh.topology().dim() - 1)
     boundary_facets.set_all(0)
     id=1
     bottom.mark(boundary_facets, id)
@@ -188,8 +190,7 @@ def post_process(T, interactively):
     print("heat flux rate integral on the surface(w/m^2)", flux)
 
     plot(T, title='Temperature')
-    if interactively:
-        interactive()
+
 
 def test_radiation():
     using_anisotropic_conductivity = False
@@ -212,7 +213,9 @@ def test_radiation():
     solver.material['emissivity'] = 0.9
 
     T = solver.solve()
-    post_process(T, interactively)
+    post_process(T)
+    if interactively:
+        solver.plot()
 
 def test():
     #setup(using_anisotropic_conductivity = True, using_convective_velocity = False, using_DG_solver = False, using_HTC = False)

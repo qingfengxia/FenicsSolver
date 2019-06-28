@@ -125,7 +125,7 @@ def test():
 def post_process(T):
     # Report flux, they should match
     normal = FacetNormal(mesh)
-    boundary_facets = FacetFunction('size_t', mesh)
+    boundary_facets = MeshFunction('size_t', mesh, mesh.topology().dim() - 1)
     boundary_facets.set_all(0)
     id=1
     bottom.mark(boundary_facets, id)

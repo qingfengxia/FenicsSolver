@@ -99,8 +99,12 @@ class SolverBase():
             self.load_settings(case_input)
         else:
             raise SolverError('case setup data must be a python dict')
-        
-        if dolfin.MPI.size(dolfin.mpi_comm_world())>1:
+        # Fenics 2018.1:Rename mpi_comm_world() to MPI.comm_world.
+        try:
+            mpi_comm_world_size = MPI.size(mpi_comm_world())
+        except:
+            mpi_comm_world_size = MPI.size(MPI.comm_world)
+        if mpi_comm_world_size >1:
             self.parallel = True
             #TODO: suppress output from other process
         else:
@@ -140,9 +144,10 @@ class SolverBase():
         else:
             raise SolverError('mesh or function space must specified to construct solver object')
         self.dimension = self.mesh.geometry().dim()
+        self.topo_dimension = self.mesh.topology().dim()  # for  != 0, mesh could be topo =2, geom = 3
 
         if not hasattr(self, 'subdomains'):  # useful to set nulti-region material and body_source
-            self.subdomains = MeshFunction("size_t", self.mesh, self.dimension)
+            self.subdomains = MeshFunction("size_t", self.mesh, self.mesh.topology().dim())
         ##
         if 'body_source' in s and s['body_source']:
             self.body_source = s['body_source']
@@ -195,14 +200,14 @@ class SolverBase():
         hdf.read(mesh, "/mesh", False)
         self.mesh = mesh
 
-        self.subdomains = MeshFunction("size_t", mesh, mesh.geometry().dim())
+        self.subdomains = MeshFunction("size_t", mesh, mesh.topology().dim())
         if (hdf.has_dataset("/subdomains")):
             hdf.read(self.subdomains, "/subdomains")
         else:
             print('Subdomain file is not provided')
 
         if (hdf.has_dataset("/boundaries")):
-            self.boundary_facets = MeshFunction("size_t", mesh, mesh.geometry().dim()-1)
+            self.boundary_facets = MeshFunction("size_t", mesh, mesh.topology().dim()-1)
             hdf.read(self.boundary_facets, "/boundaries")
         else:
             print('Boundary facets file is not provided, marked from boundary settings')
@@ -223,7 +228,7 @@ class SolverBase():
         if os.path.exists(subdomain_meshfile):
             self.subdomains = MeshFunction("size_t", mesh, subdomain_meshfile)
         else:
-            self.subdomains = MeshFunction("size_t", mesh, mesh.geometry().dim())
+            self.subdomains = MeshFunction("size_t", mesh, mesh.topology().dim())
 
     def read_mesh(self, filename):
         print(filename, type(filename))
@@ -236,7 +241,7 @@ class SolverBase():
             f = XDMFFile(mpi_comm_world(), filename)
             f.read(mesh, True)
             self.generate_boundary_facets()
-            self.subdomains = MeshFunction("size_t", mesh, mesh.geometry().dim())
+            self.subdomains = MeshFunction("size_t", mesh, mesh.topology().dim())
             self.mesh = mesh
         elif filename[-4:] == ".xml":
             self._read_xml_mesh(filename)
@@ -263,7 +268,7 @@ class SolverBase():
             raise SolverError('only scalar or vector solver has a base method of generate_function_space()')
 
     def generate_boundary_facets(self):
-        boundary_facets = MeshFunction('size_t', self.mesh, self.mesh.geometry().dim()-1)
+        boundary_facets = MeshFunction('size_t', self.mesh, self.mesh.topology().dim()-1)
         boundary_facets.set_all(0)
         ## boundary conditions applying
         for name, bc in self.boundary_conditions.items():
@@ -374,10 +379,10 @@ class SolverBase():
             else:  # C++ expressing string
                 values_0 = interpolate(Expression(value, degree = _degree), W)
         elif value == None:
-            raise TypeError('None type is supplied')
+            raise TypeError('None type is supplied as value to be translated')
         else:
-            raise TypeError(' {} is supplied, not tuple, number, Constant,file name, Expression'.format(type(value)))
-            #values_0 = None
+            print('Warning: {} is supplied, not tuple, number, Constant,file name, Expression'.format(type(value)))
+            values_0 = value
         return values_0
 
     def get_variable_name(self):
@@ -478,7 +483,7 @@ class SolverBase():
         self.result = self.w_current
 
     def solve_transient(self):
-        #
+        # boundary and source change does not change left hand side (stiffness matrix) which should be reusable
         self.init_solver()
 
         ts = self.transient_settings
@@ -534,7 +539,11 @@ class SolverBase():
         return self.result
 
     def plot(self):
-        ver = dolfin.dolfin_version().split('.')
+        try:
+            ver = dolfin.dolfin_version().split('.')
+        except:
+            import dolfin
+            ver = dolfin.__version__.split('.')
         #if self.report_settings['plotting_interactive']:
         if int(ver[0]) <= 2017 and int(ver[1])<2:
             self.using_matplotlib = False  # using VTK
@@ -573,16 +582,20 @@ class SolverBase():
 
     ####################################
     def solve_linear_problem(self, F, u, Dirichlet_bcs):
-        if False:  # LU solver cause errors for heat transfer examples
+        if  'point_source' in self.settings and self.settings['point_source']:
             a_T, L_T = system(F)
             A_T = assemble(a_T)
             b_T = assemble(L_T)
             #for bc in bcs: print(type(bc))
-            [bc.apply(b_T) for bc in Dirichlet_bcs]  # apply Dirichlet BC
-            solver = LUSolver(A_T)
+            for bc in Dirichlet_bcs:
+                if isinstance(bc, DirichletBC):
+                    bc.apply(A_T, b_T)  # apply Dirichlet BC and PointSource
+                else:
+                    bc.apply(b_T)  # apply Dirichlet BC and PointSource
+            solver = LinearSolver()  # default LU solver
             self.set_solver_parameters(solver)
 
-            solver.solve(u.vector(), b_T)
+            solver.solve(A_T, u.vector(), b_T)
         else:
             problem = LinearVariationalProblem(lhs(F), rhs(F), u, Dirichlet_bcs)
             solver = LinearVariationalSolver(problem)
@@ -597,8 +610,7 @@ class SolverBase():
 
         #TODO: set nonlinear solver parameters from settings dict, same option as linear solver?
         #[print(p) for p in solver.parameters['newton_solver']]
-        #solver.parameters['newton_solver']['maximum_iterations'] = 50
-        #solver.parameters['newton_solver']['relaxation_parameter'] = 0.1
+        # see all default parameters: <https://github.com/FEniCS/dolfin/blob/master/dolfin/nls/NewtonSolver.cpp>
 
         self.set_solver_parameters(solver)
 

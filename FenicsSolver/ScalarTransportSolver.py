@@ -61,7 +61,7 @@ class ScalarTransportSolver(SolverBase):
         self.using_diffusion_form = False  # diffusion form is simple in math, but not easy to deal with nonlinear material property
 
         self.nonlinear = False
-        self.nonlinear_material = True
+        self.nonlinear_material = False
         for v in self.material.values():
             if callable(v):  # fixedme: if other material properties are functions, it will be regarded as nonlinear
                 self.nonlinear = True
@@ -148,7 +148,11 @@ class ScalarTransportSolver(SolverBase):
         if 'point_source' in self.settings and self.settings['point_source']:
             ps = self.settings['point_source']
             # FIXME: not test yet, assuming PointSource type, or a list of PointSource(value, position)
-            bcs.append(ps)
+            if isinstance(ps, PointSource):
+                bcs.append(ps)
+            else:  # a list of tuple (point, density)
+                ps_list =[PointSource(self.function_space, Point(si[0]), si[1]) for si in ps]
+                bcs += ps_list
 
         mesh_normal = FacetNormal(self.mesh)  # n is predefined as outward as positive
         if 'surface_source' in self.settings and self.settings['surface_source']:
@@ -175,7 +179,7 @@ class ScalarTransportSolver(SolverBase):
                     integrals_N.append(g*Tq*ds(i))
                 else:
                     integrals_N.append(capacity*g*Tq*ds(i))
-                #integrals_N.append(inner(capacity * (normal*g), Tq)*ds(i))  # not working
+                #integrals_N.append(inner(capacity * inner(normal, g), Tq)*ds(i))  # if g is a grad vector
             elif bc['type'] == 'symmetry':
                 pass  # zero gradient
             elif bc['type'] == 'mixed' or bc['type'] == 'Robin':
@@ -230,9 +234,9 @@ class ScalarTransportSolver(SolverBase):
         #dS = Measure("dS", subdomain_data=self.boundary_facets)  
 
         conductivity = self.conductivity(T) # constant, experssion or tensor, function of T for nonlinear
-        print('conductivity = ', conductivity)
+        #print('conductivity = ', conductivity)
         capacity = self.capacity(T)  # density * specific capacity -> volumetrical capacity
-        print('capacity = ', capacity)
+        #print('capacity = ', capacity)
         #diffusivity = self.diffusivity(T)  # diffusivity not in used for this conductivity form
         #print("diffusivity = ", diffusivity)
 
@@ -274,8 +278,9 @@ class ScalarTransportSolver(SolverBase):
             Tq = T_test
 
         # poission equation, unified for all kind of variables
-        # it apply to nonlinear conductivity, which is a function of temperature
-        # d(conductivity)/ dT is ignored here
+        # it apply to nonlinear conductivity if solved in nonlinear way, which is a function of temperature
+        # if using external nonlinear looping:  d(conductivity)/ dT * div(grad(T)) * Tq * dx
+        # div(grad(T)) is difficult to calc, so this item is ignored here, it works as capacity/dT is more important
         def F_static(T, Tq):
             return  inner(conductivity * grad(T), grad(Tq))*dx
 
@@ -298,9 +303,10 @@ class ScalarTransportSolver(SolverBase):
             F -= sum(bs_items)
 
         if self.convective_velocity:
-            if self.nonlinear_material:
-                F += inner(velocity, grad(T*capacity))*Tq*dx  # those 2 are equal
-                #F += inner(velocity, grad(T))*Tq*capacity*dx + inner(velocity, grad(T))*Tq*self.material['dc_dT']*T*dx
+            if self.nonlinear_material:  # those 2 expr are equal
+                F += inner(velocity, grad(T*capacity))*Tq*dx
+                if 'dc_dT' in self.material and isinstance(capacity, Function):  # external nonlinear looping
+                    F +=  inner(velocity, grad(T))*Tq*self.material['dc_dT']*T*dx
             else:
                 F += inner(velocity, grad(T))*Tq*capacity*dx
             if ads['stabilization_method'] and ads['stabilization_method'] == 'IP':
@@ -345,7 +351,7 @@ class ScalarTransportSolver(SolverBase):
         
         #print(F)
         if self.nonlinear_material:
-            self.nonlinear_material = True
+            self.nonlinear = True
         if self.nonlinear:
             F = action(F, T_current)  # API 1.0 still working ; newer API , replacing TrialFunction with Function for nonlinear 
             self.J = derivative(F, T_current, T)  # Gateaux derivative
