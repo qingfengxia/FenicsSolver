@@ -61,20 +61,39 @@ git clone https://github.com/qingfengxia/FenicsSolver.git
 
 installation via PIP will be implemented later once API is stable, but an early preview v0.1 could be privided
 ```
-#make sure you have install Fenics, then install by pip or pip3
+#make sure you have install Fenics, then install by pip(python) or pip3(python3)
 sudo pip install FenicsSolver
+```
+
+to install the latest version for python3
+```
+pip3 install git+https://github.com/qingfengxia/FenicsSolver.git#FenicsSolver
+# Ubuntu16.04 pip3 seems too old to install matplotlib.
+#fenics 2019.1 can be installed from pip
 ```
 
 ## Testing
 
 This package is under heavy refactoring, considered alpha.
 
-This package is python 2 and python 3 compatibe, but current FreeCAD supports only Python2 for the time being.
-Fenics version 2017.1 tested is on Ubuntu16.04, python 2.7 with/without FreeCAD 0.17 dev.
+This package is python 2 and python 3 compatibe.
+Fenics version 2017.1 tested is on Ubuntu16.04 and python 2.7 with/without FreeCAD 0.17 dev.
 Fenics version 2017.2 tested is on Ubuntu16.04 and Python 3, without FreeCAD GUI. 
+Fenics version 2019.1 tested is on Ubuntu18.04 and Python 3, with FreeCAD 0.19 dev. 
 
 Run the python script files with "test_" suffix, which are gtest compatible. 
 
+## How to contribute
+
+There are lots of places to be improve:
++ Code review, esp. json solver setup input data structure, naming, It should be well-design and stable
++ testing on different Linux platform
+
+new features:
++ limits for variable
++ a general higher order temporal integral
++ DG scalar transportation, currently, the DG solver does not work with 3D geometry.
++ Maxwell equation
 
 ## Roadmap and progress
 
@@ -108,10 +127,12 @@ Two-way coupling should be implemented with the multiphysics coupling library [p
 a video/presentation of my *13th OpenFOAM Workshop* presentation can be found here:
 [Coupling OpenFOAM with FeniCS for multiphysis simulation](https://www.iesensor.com/blog/2018/06/25/coupling-openfoam-with-fenics-for-multiphysis-simulation-openfoam-workshop-13-presentation/)
 
-### 5. Coupling with electomagnetic, structural and thermal simulation (2019)
+### 5. Update code to be compatible with Fenics 2019.1 on Python3 (2019)
+
+### 6. Coupling with electomagnetic, structural and thermal simulation (2019)
 
 #### thermal-elastic-plastic coupling
-#### pip packaging 
+#### pip packaging and instllation guide
 #### Travis CI integration
 
 ## To cite this code
