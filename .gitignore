@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# specific to this project
+examples/navier_stokes_cylinder/*
+
 # C extensions
 *.so
 .hidden

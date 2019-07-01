@@ -314,7 +314,7 @@ class CoupledNavierStokesSolver(SolverBase):
         # Define Form for the static Stokes Coupled equation,  divided by rho on both sides
         F = nu * 2.0*inner(epsilon(u), epsilon(v))*dx \
             - (p/rho)*div(v)*dx \
-            + div(u)*(q)*dx  # comes from incomperssible flow equation, diveded by rho?
+            + div(u)*(q/rho)*dx  # comes from incomperssible flow equation, diveded by rho? or not divided by rho, does that make difference?
         if self.settings['body_source']:   # just gravity, without * rho
             F -= inner(self.get_body_source(), v)*dx
 
@@ -512,13 +512,13 @@ class CoupledNavierStokesSolver(SolverBase):
                 #  AMG is not working with mixed function space
                 
                 #limiting result value, if the problem is highly nonlinear
-                diff_up = up_.vector().array() - up_temp.vector().array()
+                diff_up = up_.vector().get_local() - up_temp.vector().get_local()
                 eps = np.linalg.norm(diff_up, ord=np.Inf)
 
                 print("iter = {:d}; eps_up = {:e}; time elapsed = {}\n".format(iter_, eps, timer_solver.elapsed()))
 
                 ## underreleax should be defined here, Courant number,
-                up_.vector()[:] = up_temp.vector().array() + diff_up * under_relax_ratio
+                up_.vector()[:] = up_temp.vector().get_local() + diff_up * under_relax_ratio
 
                 iter_ += 1
             ## end of Picard loop

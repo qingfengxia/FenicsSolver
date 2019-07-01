@@ -155,7 +155,7 @@ class FSISolver(CoupledSolver):
 
         #self.parent_vector_function_space = VectorFunctionSpace(self.parent, 
         #                self.fluid_solver.settings['fe_family'], self.fluid_solver.settings['fe_degree'])
-        #self.parent_facet_function = FacetFunction('double', self.parent_vector_function_space)
+        #self.parent_facet_function = MeshFunction('double', self.parent_vector_function_space.mesh(), mesh.topology().dim() - 1)
 
         #self.solid_facet_function = FacetFunction('double', self.solid_vector_function_space)
         #self.fluid_facet_function = FacetFunction('double', self.fluid_vector_function_space)
@@ -236,7 +236,7 @@ class FSISolver(CoupledSolver):
         return project(solid_V1_temp, target_space)
 
     def map_fluid_to_solid_tensor(self, sigma):
-        #print( sigma.vector().array().shape)  1D  Petsc vector, size = npoint * dim * dim
+        #print( sigma.vector().get_local().shape)  1D  Petsc vector, size = npoint * dim * dim
         boundary_stress = Function(self.solid_T1)  # set all DOF to zero?
         for fi, si in self.interface_fluid_solid_vi:
             #print(fi, type(sigma.vector()[self.fluid_v2d_tensor[fi]]), sigma.vector()[self.fluid_v2d_tensor[fi]])
@@ -290,7 +290,7 @@ class FSISolver(CoupledSolver):
     def move_fluid_interface(self, mesh_disp):
         # assing no fluid mesh topo change
         self.previous_fluid_mesh = copy.copy(self.fluid_solver.mesh)
-        self.mesh_offset.vector()[:] = mesh_disp.vector().array() - self.previous_fluid_mesh_disp.vector().array()
+        self.mesh_offset.vector()[:] = mesh_disp.vector().get_local() - self.previous_fluid_mesh_disp.vector().get_local()
         ALE.move(self.fluid_solver.mesh, self.mesh_offset)
         self.previous_fluid_mesh_disp = mesh_disp
 
@@ -340,8 +340,8 @@ class FSISolver(CoupledSolver):
         else:  # incremental deformation from previous mesh
             Vs = VectorFunctionSpace(self.current_solid_mesh, self.solid_solver.settings['fe_family'], self.solid_solver.settings['fe_degree'])
             nDisp, nVel = Function(Vs), Function(Vs)
-            nDisp.vector()[:] = disp.vector().array()
-            nDisp.vector()[:] = disp.vector().array()
+            nDisp.vector()[:] = disp.vector().get_local()
+            nDisp.vector()[:] = disp.vector().get_local()
             disp_bfunc = project(nDisp, Vf)
             vel_bfunc = project(nVel, Vf)
 
@@ -371,7 +371,7 @@ class FSISolver(CoupledSolver):
             bc_values = [{'variable': "velocity",'type': 'Dirichlet', 'value': boundary_velocity}]
             self.fluid_solver.settings['boundary_conditions'][iface]['value'] = bc_values
 
-        print('max mesh disp', np.max(mesh_disp.vector().array()))
+        print('max mesh disp', np.max(mesh_disp.vector().get_local()))
         return mesh_disp
 
     def move_solid_interface(self):

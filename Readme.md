@@ -51,6 +51,9 @@ link to install lastest Fenics via PPA on ubuntu: <https://launchpad.net/~fenics
 ```
 sudo add-apt-repository ppa:fenics-packages/fenics
 sudo apt-get update
+sudo apt-get install fenics python-dolfin
+#Fenics 2018.1 has only python3
+#sudo apt-get install fenics python3-dolfin
 ```
 
 copy this folder to any place on the python search path (PYTHON_PATH), assuming fenics has been installed. 

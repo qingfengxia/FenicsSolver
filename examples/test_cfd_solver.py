@@ -33,13 +33,20 @@ interactively = is_interactive()
 from dolfin import *
 from FenicsSolver import SolverBase
 
+#print("dolfin version()", dolfin.__version__)  #
+import dolfin
+ver = [int(s) for s in dolfin.__version__.split('.')]
+if ver[0]<2018:
+    UserExpression = Expression
+
+
+
 transient = False
 T_ambient =300
 T_wall = 350
 p_inlet = 1.1e5
 p_outlet = 1e5
 
-print("print dolfin.dolfin_version()", dolfin.dolfin_version())
 length_scale = 1
 max_vel=1 * length_scale
 
@@ -97,7 +104,7 @@ def setup(using_elbow = True, using_3D = False, compressible=False):
     x_c=0.5 * length_scale
     if using_3D:
         _init_vel = (0, max_vel*0.2, 0)
-        class InletVelcotyExpression(Expression):
+        class InletVelcotyExpression(UserExpression):
             def eval(self, value, x):
                 value[0] = 0
                 value[1] = max_vel * (1.0 - (abs(x[0]-x_c)/x_c)**2)
@@ -106,7 +113,7 @@ def setup(using_elbow = True, using_3D = False, compressible=False):
                 return (3,)
     else:
         _init_vel = (0, max_vel*0.2)
-        class InletVelcotyExpression(Expression):
+        class InletVelcotyExpression(UserExpression):
             def eval(self, value, x):
                 value[0] = 0
                 value[1] = max_vel * (1.0 - (abs(x[0]-x_c)/x_c)**2)
