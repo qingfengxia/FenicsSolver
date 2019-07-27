@@ -24,13 +24,14 @@ from __future__ import print_function, division
 import math
 import numpy as np
 
+from config import is_interactive
+interactively = is_interactive()  # manual set it False to debug solver
+
 from dolfin import *
 from FenicsSolver import LinearElasticitySolver
 from FenicsSolver import NonlinearElasticitySolver
 from FenicsSolver import SolverBase
 
-from config import is_interactive
-interactively = is_interactive()
 set_log_level(ERROR)
 
 def test():

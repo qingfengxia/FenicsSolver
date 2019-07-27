@@ -126,13 +126,14 @@ class LargeDeformationSolver(NonlinearElasticitySolver):
 
         F = F1 + F2
         ds= Measure("ds", subdomain_data=self.boundary_facets)  # if later marking updating in this ds?
+        # note: why u and _v (test function for velocity) are passed to the function below?
         bcs, integrals_F = self.update_boundary_conditions(time_iter_, u, _v, ds)
         if time_iter_==0:
             plot(self.boundary_facets, title = "boundary facets colored by ID")
             #interactive()
 
         if self.body_source:
-            integrals_F.append(inner(self.body_source, _v)*dx )
+            integrals_F.append(inner(self.body_source, _v)*dx )  #
 
         F += sum(integrals_F)  # FIXME: in original tutorial, boundary flux is added to F
         #to do: direction_vector if it is not a tuple,  constant of vector
@@ -169,5 +170,23 @@ class LargeDeformationSolver(NonlinearElasticitySolver):
         #v.rename("v", "velocity")
         #p.rename("p", "pressure")
         plot(u, mode="displacement", wireframe=True)
+    
+    def save(self, result_filename):
+        print("Error: save function has error, using SolverBase save()")
+        print("Suppress this error by provide this dummy save() in the subclass")
+        """
+        suffix = '.pvd'
+        assert result_filename[-4:] == '.pvd'
+        result_filename_root = result_filename[:-4]
+        ret = split(self.result)
+        for i, var in enumerate(ret):
+            var_name = self.settings['mixed_variable'][i]
+            # AttributeError: 'ListTensor' object has no attribute 'rename',  for LargeDeformationSolver
+            var.rename(var_name, "label")  # why renaming does not show in vtu file?
+            var_result_filename = result_filename_root + '_' + var_name + suffix
+            result_stream = File(var_result_filename)
+            result_stream << (var, self.current_time)
+        """
+        pass
     ####################################
 

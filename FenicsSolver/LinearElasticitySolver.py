@@ -29,7 +29,7 @@ Features:
 - support 2D and 3D with nullspace accel
 
 Todo:
-- Elastodynamics - vibration, not yet implemented
+- Elastodynamics - or dynamics (acceleration * density can not be ignored) vibration, damping,
 - point source, as nodal constraint,  is not supported yet
 - contact/frictional boundary condition, not yet implemented
 - nonhomogenous meterial property like elastic modulus, not yet tested
@@ -51,7 +51,7 @@ from dolfin import *
 
 from .SolverBase import SolverBase, SolverError
 class LinearElasticitySolver(SolverBase):
-
+    # static and dynamic 
     def __init__(self, case_settings):
         case_settings['vector_name'] = 'displacement'
         SolverBase.__init__(self, case_settings)
@@ -80,6 +80,8 @@ class LinearElasticitySolver(SolverBase):
         nu = self.material['poisson_ratio']
         tec = self.material['thermal_expansion_coefficient']
         thermal_strain = tec * ( T - Constant(self.reference_values['temperature']))
+        #(lmbda*tr(eps(v)) - kappa*dT)*Identity(2) + 2*mu*eps(v)  # coupled
+        #alpha*(3*lmbda+2*mu)*dT)*Identity(2)  # weak coupled
         return elasticity/(1.0 - 2.0*nu) * thermal_strain * Identity(self.dimension)
 
     def strain_energy(self, u):
@@ -130,35 +132,52 @@ class LinearElasticitySolver(SolverBase):
                     else:
                         dbc = DirichletBC(V, self.translate_value(bv), self.boundary_facets, i)
                         bcs.append(dbc)
-                else: # mixed_function_space for LargeDeformationSolver, only displacement is needed in boundary condition
+                else: # mixed_function_space for LargeDeformationSolver
                     disp_i, vel_i, pressure_i = 0, 1, 2
                     if 'value' in bc:  # only displacement is provided, set the velocity as zero?
                         bv = bc['value']
-                        if isinstance(bv, (tuple, list)) and len(bv) == self.dimension:
-                            axis_i=0
-                            for disp in bv:
-                                if not disp is None:  # None means free of constraint, but zero is kind of constraint
-                                    dbc = DirichletBC(V.sub(disp_i).sub(axis_i), self.translate_value(disp), self.boundary_facets, i)
-                                    bcs.append(dbc)
-                                axis_i += 1
-                        else:  # bc['values'] =
-                            dbc = DirichletBC(V.sub(disp_i), self.translate_value(bv), self.boundary_facets, i)
+                        if bc['variable'] == 'displacement':
+                            if isinstance(bv, (tuple, list)) and len(bv) == self.dimension and not all(bv):
+                                axis_i=0
+                                for disp in bv:
+                                    if not disp is None:  # None means free of constraint, but zero is kind of constraint
+                                        dbc = DirichletBC(V.sub(disp_i).sub(axis_i), self.translate_value(disp), self.boundary_facets, i)
+                                        bcs.append(dbc)
+                                    axis_i += 1
+                            else:
+                                var_i = disp_i
+                                dbc = DirichletBC(V.sub(var_i), self.translate_value(bv), self.boundary_facets, i)
+                                bcs.append(dbc)
+                        elif bc['variable'] == 'velocity':
+                            var_i = vel_i
+                            dbc = DirichletBC(V.sub(var_i), self.translate_value(bv), self.boundary_facets, i)
                             bcs.append(dbc)
+                        elif bc['variable'] == 'all':
+                            dbc = DirichletBC(V, self.translate_value(bv), self.boundary_facets, i)
+                            bcs.append(dbc)
+                        else:
+                            print(bc)
+                            raise SolverError('Error, boundary setting is not supported: ')
+
                     else: # bc['values'] =[ {'variable': displacement' , 'value': dvalue}, { 'variable':'velocity', 'value': vvalue}
                         pass  # not yet needed
 
             elif bc['type'] == 'force':
-                bc_force = self.translate_value(bc['value'])
-                # calc the surface area and calc stress, normal and tangential?
-                bc_area = assemble(Constant(1)*ds(bc['boundary_id'], domain=self.mesh))
-                print('boundary area (m2) for force boundary is', bc_area)
-                g = bc_force / bc_area
-                # FIXME: assuming all force are normal to mesh boundary
-                if 'direction' in bc and bc['direction']:
-                    direction_vector = bc['direction']
+                if isinstance(bc['value'], (tuple, list)) and len(bc['value']) == self.dimension:
+                    force_vector = Constant((bc['value']))
                 else:
-                    direction_vector = mesh_normal
-                integrals_N.append(dot(self.get_flux(u, direction_vector*g), v)*ds(i))
+                    bc_force = self.translate_value(bc['value'])
+                    # calc the surface area and calc stress, normal and tangential?
+                    bc_area = assemble(Constant(1)*ds(bc['boundary_id'], domain=self.mesh))
+                    print('boundary area (m2) for force boundary is', bc_area)
+                    g = bc_force / bc_area
+                    # FIXME: assuming all force are normal to mesh boundary
+                    if 'direction' in bc and bc['direction']:
+                        direction_vector = bc['direction']
+                    else:
+                        direction_vector = mesh_normal
+                    force_vector = direction_vector*g
+                integrals_N.append(dot(self.get_flux(u, force_vector), v)*ds(i))
             elif bc['type'] == 'pressure':
                 # scalar, normal to boundary surface, or by a given direction vector
                 if 'direction' in bc and bc['direction']:

@@ -102,11 +102,18 @@ class SolverBase():
         # Fenics 2018.1:Rename mpi_comm_world() to MPI.comm_world.
         try:
             mpi_comm_world_size = MPI.size(mpi_comm_world())
+            #suppress output from other process
+            if MPI.rank(mpi_comm_world()) != 0:
+                #set_log_level(LogLevel.CRITICAL)
+                set_log_active(False)  # complete turn off logging.
         except:
             mpi_comm_world_size = MPI.size(MPI.comm_world)
+            #suppress output from other process
+            if MPI.rank(MPI.comm_world) != 0:
+                #set_log_level(LogLevel.CRITICAL)
+                set_log_active(False)  # complete turn off logging.
         if mpi_comm_world_size >1:
             self.parallel = True
-            #TODO: suppress output from other process
         else:
             self.parallel = False
 
@@ -524,7 +531,7 @@ class SolverBase():
             if sf and sf>0:
                 if self.current_step > 0 and (self.current_step % sf == 0):
                     self.save(result_filename)  # 
-                    print("save data to file `{}` at step: {} , at time: {}". format(result_filename, self.current_time))
+                    print("save data to file `{}` at step: {} , at time: {}". format(result_filename, self.current_step , self.current_time))
             if not self.transient_settings['transient']:
                 break
             self.current_step += 1
@@ -575,6 +582,7 @@ class SolverBase():
             ret = split(self.result)
             for i, var in enumerate(ret):
                 var_name = self.settings['mixed_variable'][i]
+                # AttributeError: 'ListTensor' object has no attribute 'rename',  for LargeDeformationSolver
                 var.rename(var_name, "label")  # why renaming does not show in vtu file?
                 var_result_filename = result_filename_root + '_' + var_name + suffix
                 result_stream = File(var_result_filename)

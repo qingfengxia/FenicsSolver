@@ -21,9 +21,13 @@
 # *                                                                         *
 # ***************************************************************************
 
-#from __future__ import print_function, division
+from __future__ import print_function, division
 import math
 import numpy as np
+
+"""
+error: Error:   Unable to create Dirichlet boundary condition.
+"""
 
 from config import is_interactive
 interactively = is_interactive()  # manual set it False to debug solver
@@ -58,11 +62,14 @@ def solve_elasticity(using_2d, length, E, nu, dt, t_end, dirname):
     from collections import OrderedDict
     bcs = OrderedDict()
     # not supported value type: V.sub(0).sub(0)
-    bcs["fixed"] = {'boundary': left, 'boundary_id': 1, 'type': 'Dirichlet', \
-                            'value': (gdim*(0.0, ), gdim*(0.0, ))}
+    bcs["fixed"] = {'boundary': left, 'boundary_id': 1, 'type': 'Dirichlet', 'variable': "displacement", \
+                            'value': gdim*(0.0, )}
+    bcs["fixed_velocity"] = {'boundary': left, 'boundary_id': 1, 'type': 'Dirichlet', 'variable': "velocity", \
+                            'value': gdim*(0.0, )}
     bfunc = lambda t: 100*t # it should be a functon of time
-    bcs["displ"] = {'boundary': right, 'boundary_id': 2, 'type': 'pressure', 'value': bfunc, 'direction': bF_direction}
-
+    #bcs["displ"] = {'boundary': right, 'boundary_id': 2, 'type': 'pressure', 'value': bfunc, 'direction': bF_direction}
+    bcs["stress_b"] = {'boundary': right, 'boundary_id': 2, 'type': 'force', 'value': (0, 5)}
+    
     import copy
     s = copy.copy(SolverBase.default_case_settings)
     s['material'] = {'name': 'steel', 'elastic_modulus': E, 'poisson_ratio': nu, 'density': 1000, 

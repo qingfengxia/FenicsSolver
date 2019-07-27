@@ -65,14 +65,14 @@ git clone https://github.com/qingfengxia/FenicsSolver.git
 installation via PIP will be implemented later once API is stable, but an early preview v0.1 could be privided
 ```
 #make sure you have install Fenics, then install by pip(python) or pip3(python3)
-sudo pip install FenicsSolver
+sudo pip install FenicsSolver  # not working
 ```
 
-to install the latest version for python3
+to install the latest version for python3 directly form github, this will not install test files
 ```
 pip3 install git+https://github.com/qingfengxia/FenicsSolver.git#FenicsSolver
 # Ubuntu16.04 pip3 seems too old to install matplotlib.
-#fenics 2019.1 can be installed from pip
+# fenics 2019.1 can be installed from pip
 ```
 
 ## Testing

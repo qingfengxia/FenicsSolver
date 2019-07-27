@@ -42,6 +42,7 @@ class NonlinearElasticitySolver(LinearElasticitySolver):
     def __init__(self, s):
         LinearElasticitySolver.__init__(self, s)
         #nonlinear special setting
+        self.settings['mixed_variable'] = ('displacement', 'velocity', 'pressure')
 
     def generate_form(self, time_iter_, u, v, u_current, u_prev):
         # todo: transient

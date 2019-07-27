@@ -6,9 +6,11 @@ dist: xenial
 sudo: required
 language: python
 python:
-- '2.7'
+  - '3'
 
-#Disallowing sources: ppa:fenics-packages/fenics
+services:
+  - docker
+
 # To add unlisted APT sources, follow instructions in https://docs.travis-ci.com/user/installing-dependencies#Installing-Packages-with-the-APT-Addon
 # xenial  has a different way of installing from PPA
 addons:
@@ -16,7 +18,7 @@ addons:
     sources:
     - ppa:fenics-packages/fenics
     packages:
-      - fenics 
+      - fenics
       - python3-dolfin
 
 install:
@@ -25,19 +27,30 @@ install:
   -y python-matplotlib python-numpy git; fi
 - if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then travis_retry sudo apt-get install
   -y python3-matplotlib python3-numpy git; fi
-# install the package to be tested
-- python -c 'import dolfin; print("Fenics version", dolfin.__version__)'
-- echo "current working dir is $(pwd)"
-- git clone https://github.com/qingfengxia/FenicsSolver.git
-- cd FenicsSolver
-- export PYTHONPATH=$(pwd):$PYTHONPATH
+
+
+# qingfengxia/FenicsSolver
+# already git clone this repo: git clone --depth=50 --branch=master https://github.com/qingfengxia/FenicsSolver.git qingfengxia/FenicsSolver
+# cd into this repo
+
+- echo "current working dir is $(pwd)"  && ls
+# Use the YAML block scalar header (|) to allow easier multiline script coding.
+- docker pull quay.io/fenicsproject/stable:current
+- docker run -v $(pwd):/home/fenics/shared -w /home/fenics/shared quay.io/fenicsproject/stable:current /bin/bash -c "echo $(pwd) && export PYTHONPATH=$(pwd):$PYTHONPATH && cd examples && python run_all_tests.py"
+
+#out of docker
+#- git clone https://github.com/qingfengxia/FenicsSolver.git qingfengxia/FenicsSolver
+#- cd FenicsSolver
 - travis_retry sudo python setup.py install
 
 script:
-- pwd
+# test the installed fenics  packages
+- python -c 'import dolfin; print("Fenics version", dolfin.__version__)'
+- echo "current working dir is $(pwd)"
+- export PYTHONPATH=$(pwd):$PYTHONPATH
 - if  [ -d 'examples' ] ; then cd examples && python run_all_tests.py; fi
-# build the wheel 
-- python setup.py bdist_wheel
+# build the wheel
+- cd .. && python setup.py bdist_wheel
 
 
 # my pypi upload does not work even with CLI
