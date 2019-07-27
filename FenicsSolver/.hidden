@@ -1,0 +1,8 @@
+*.pyc
+CompressibleNSSolver.pyc
+CoupledNavierStokesSolver.pyc
+__init__.pyc
+LinearElasticitySolver.pyc
+main.pyc
+ScalerEquationSolver.pyc
+SolverBase.pyc
