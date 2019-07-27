@@ -6,6 +6,9 @@ __pycache__/
 # specific to this project
 examples/navier_stokes_cylinder/*
 
+#doxygen
+docs/*
+
 # C extensions
 *.so
 .hidden

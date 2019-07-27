@@ -12,6 +12,9 @@ python:
 services:
   - docker
 
+branches:
+  only:
+    - master
 # To add unlisted APT sources, follow instructions in https://docs.travis-ci.com/user/installing-dependencies#Installing-Packages-with-the-APT-Addon
 # xenial  has a different way of installing from PPA
 addons:
@@ -21,6 +24,7 @@ addons:
     packages:
       - fenics
       - python3-dolfin
+      - doxygen
 
 install:
 - sudo apt-get update -q
@@ -38,11 +42,9 @@ install:
 # Use the YAML block scalar header (|) to allow easier multiline script coding.
 - docker pull quay.io/fenicsproject/stable:current
 - docker run -v $(pwd):/home/fenics/shared -w /home/fenics/shared quay.io/fenicsproject/stable:current /bin/bash -c "echo $(pwd) && export BATCH && export PYTHONPATH=$(pwd):$PYTHONPATH && cd examples && python3 run_all_tests.py"
+# output of docker, show the log
+- docker logs
 
-#out of docker
-#- git clone https://github.com/qingfengxia/FenicsSolver.git qingfengxia/FenicsSolver
-#- cd FenicsSolver
-- travis_retry sudo python setup.py install
 
 script:
 # test the installed fenics  packages
@@ -50,13 +52,21 @@ script:
 - echo "current working dir is $(pwd)"
 - export PYTHONPATH=$(pwd):$PYTHONPATH
 - if  [ -d 'examples' ] ; then cd examples && python run_all_tests.py; fi
-# build the wheel
+- doxygen Doxyfile
+# build the wheel,   skip_cleanup: true
 - cd .. && python setup.py bdist_wheel
 
-
-# my pypi upload does not work even with CLI
+# deploy to multiple providers are possible, make a list
 deploy:
-  provider: pypi
+  - provider: pages
+  skip_cleanup: true
+  local_dir: docs/html
+  github_token: $GH_REPO_TOKEN
+  on:
+    branch: master
+
+  - provider: pypi
+  skip_cleanup: true
   user: qingfeng.xia
   password:
     secure: M/s6AFn6GXE0UCZyiMJ0C+lZSmtdo/BYmkx0CrsJDt/Tfov50i1vnVAw25kHctY0M3wSUFCCwcsy443P2rkjpk1UtxvUnbWIKa3wf5BuGeWznA3AHaG26t6OA7O7G3GkgVAHsypqKtnDaSaxFxgYeMcxH4HlB8jw39q4lAhjyMrRmqYZjks8dhCAbCxoMnIP9phUm3sXvy3gJYI8wirP8JBERI2b9v2VFwMC1v3ZO4hhr/90GiVGjzvckXONlc4PK3pJGDZYWvlGa2mSp1qg1vHED/FofUCrMOyDMiZevzLLSBFzmK24d8Qu45bYHbIJU3ugJurBLwuUdK/RWntE7WUZW1M9NewS2E6Uvrx2u1nqjf9RHsdsGCVTt2KnnVSl7ys3w7Ka7yfKSk+gjD34Hyjk63ULepGWfpp4dvWpbu7JyqUWHojt1xMKHZf3y7FSjbMqaJ7Ee8t4Z78c5uRRMxU9c80LI1H6NXTds4DN5XYTPr7CeA7QucLW/WOt2QvRWUaEwKb9K/VTbRf1RDqK0rHe8hEOBKuz6P+R6UK6PqGFPiZmW9vEr3vQh9CqrbiMc0PdfATtaXFCay4gPoI2FvOoE7Bt+1R20kOi7XPb7Kg5zTAd/ve5ZcAHragcque1XelVmQ+COw1oLrgO507UHoO06jYcNzbjQW/FY4Qx/Rc=
