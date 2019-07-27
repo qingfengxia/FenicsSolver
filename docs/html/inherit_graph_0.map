@@ -1,5 +1,0 @@
-<map id="Graphical Class Hierarchy" name="Graphical Class Hierarchy">
-<area shape="rect" id="node2" href="$class_fenics_solver_1_1_coupled_navier_stokes_solver_1_1_coupled_navier_stokes_solver.html" title="FenicsSolver.CoupledNavier\lStokesSolver.CoupledNavierStokes\lSolver" alt="" coords="143,5,373,61"/>
-<area shape="rect" id="node3" href="$class_fenics_solver_1_1_linear_elasticity_solver_1_1_linear_elasticity_solver.html" title="FenicsSolver.LinearElasticity\lSolver.LinearElasticitySolver" alt="" coords="163,85,353,126"/>
-<area shape="rect" id="node4" href="$class_fenics_solver_1_1_scalar_transport_solver_1_1_scalar_transport_solver.html" title="FenicsSolver.ScalarTransport\lSolver.ScalarTransportSolver" alt="" coords="161,150,355,191"/>
-</map>
