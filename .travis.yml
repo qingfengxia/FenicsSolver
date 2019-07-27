@@ -1,12 +1,13 @@
-dist: xenial
+dist: bionic
 #dist: xenial is not supported before Nov 2018, python2 is the default for trusty
+#dist: bionic is now available
 # https://blog.travis-ci.com/2018-11-08-xenial-release
 # docker is another way to test out this FenicsSolver
 
 sudo: required
 language: python
 python:
-  - '3'
+  - '3.6'
 
 services:
   - docker
@@ -36,7 +37,7 @@ install:
 - echo "current working dir is $(pwd)"  && ls
 # Use the YAML block scalar header (|) to allow easier multiline script coding.
 - docker pull quay.io/fenicsproject/stable:current
-- docker run -v $(pwd):/home/fenics/shared -w /home/fenics/shared quay.io/fenicsproject/stable:current /bin/bash -c "echo $(pwd) && export PYTHONPATH=$(pwd):$PYTHONPATH && cd examples && python run_all_tests.py"
+- docker run -v $(pwd):/home/fenics/shared -w /home/fenics/shared quay.io/fenicsproject/stable:current /bin/bash -c "echo $(pwd) && export BATCH && export PYTHONPATH=$(pwd):$PYTHONPATH && cd examples && python3 run_all_tests.py"
 
 #out of docker
 #- git clone https://github.com/qingfengxia/FenicsSolver.git qingfengxia/FenicsSolver
