@@ -1,10 +1,14 @@
 {
+"_comment": "SolverBase has the default solver settings",
 "solver_name": "ScalerEquationSolver",
-"scaler_name": "temperature",
+"scalar_name": "temperature",
 "case_folder": "/tmp/", 
 "case_name": "TestHT", 
 "mesh": "../data/mesh.xml",
 "case_file": "../data/TestHeatTransfer.json",
+"fe_degree": 1,
+"fe_family": "CG",
+"periodic_boundary": null, 
 "material": {"kinematic_viscosity": 1, "name": "oil", "density": 1000, "specific_heat_capacity": 500, "thermal_conductivity": 20}, 
 "boundary_conditions": 
 {

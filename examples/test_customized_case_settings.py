@@ -23,6 +23,13 @@
 
 from __future__ import print_function, division
 
+"""
+This is outdated, served solver for FreeCAD CFD GUI 
+"""
+
+from config import is_interactive
+interactively = is_interactive()  # manual set it False to debug solver
+
 from FenicsSolver.main import load_settings
 from FenicsSolver import ScalarTransportSolver
 
@@ -30,7 +37,8 @@ def test_elasticity():
     pass
 
 def test_CFD():
-    #currently, not usable
+    #
+    raise NotImplementedError("currently, CFD test is not usable, try CFD test in examples folder")
     df = '../data/TestCFD.json'
     settings = load_settings(df)  # force python2 load ascii string
     #settings['case_folder'] = os.path.abspath(os.path.dirname(__file__)) + os.path.sep + "data"

@@ -1,11 +1,15 @@
 # Multiphysics FEM solver based on Fenics
 
+This is a sub-projects of [intelligient engineering design](https://qingfengxia.github.io/)
+
 by Qingfeng Xia, 2017~
 
-This is derived from my personal independent research, although I am not yet financially independent in the University of Oxford. This solver has features beyond commercial commercial solvers, in its capability to solve multibody, multiphysics, multiscale and reduced-order nonlinear problems.
-This software project is an essential part of my research ambition in *Measurement and modelling at extreme conditions* and *Automated and intelligient engineering design*.
+This is derived from my personal independent research, although I am not yet financially independent in the University of Oxford. This solver has features beyond commercial commercial solvers, in its capability to solve multibody, multi-physics, multiscale and reduced-order nonlinear problems.
+This software project is an essential part of my research ambition in *Measurement and modelling at extreme conditions* and *Automated and intelligent engineering design*.
 
 ![Schematic of automated engineering design pipeline](https://forum.freecadweb.org/download/file.php?id=73587)
+
+> **Note**   Fenics-X, the next generation Fenics, is expected in 2020. There would API change. 
 
 ## License
 
@@ -75,7 +79,25 @@ pip3 install git+https://github.com/qingfengxia/FenicsSolver.git#FenicsSolver
 # fenics 2019.1 can be installed from pip
 ```
 
-## Testing
+
+
+## To cite this code
+
+My journal papers using this code:
+
+1. [Quasi-static  finite element modelling of thermal distribution and heat partitioning  for the multi-component system of high speed metal cutting](https://scholar.google.co.uk/scholar?oi=bibs&cluster=14068789234387025355&btnI=1&hl=en), Q Xia, DRH Gillespie - Journal of Materials Processing Technology, 2019
+
+2. [Quasi-Static Thermal Modeling of Multiscale Sliding Contact for Unlubricated Brush Seal Materials](https://scholar.google.co.uk/scholar?oi=bibs&cluster=17170664792619422119&btnI=1&hl=en)
+
+   Q Xia, DRH Gillespie, AK Owen, G Franceschini - Journal of Engineering for Gas Turbines and Power, 2019
+
+## Acknowledgement
+
+Thanks for my family members' (esp, Mrs J Wang) understanding and support, so I can work at home.
+
+
+
+## Tested version
 
 This package is under heavy refactoring, considered alpha.
 
@@ -85,6 +107,10 @@ Fenics version 2017.2 tested is on Ubuntu16.04 and Python 3, without FreeCAD GUI
 Fenics version 2019.1 tested is on Ubuntu18.04 and Python 3, with FreeCAD 0.19 dev. 
 
 Run the python script files with "test_" suffix, which are gtest compatible. 
+
+## Documentation:
+
+**doxygen/sphinx** generated document is planned, yet completed
 
 ## How to contribute
 
@@ -102,27 +128,27 @@ new features:
 
 see also my presentation at Fenics 18: [Automated Mechanical Engineering Design using Open Source CAE Software Packages](doc/Fenics18_Xia.pdf)
 
-### 1. Initial demonstration (Sep 2017)
+### Initial demonstration (Sep 2017)
 
 A series of object oriented solvers: *ScalerEquationSolver*, *CoupledNavierStokesSolver* and *LinearElasticitySolver*, derived from *BaseSolver*, while a few other are under active development. 
 
 Case setup: json file format is the text case setup file, mapping directly to and from python dict data structure.
 
-### 2. FreeCAD GUI integration (Nov 2017)
+### FreeCAD GUI integration (Nov 2017)
 
 2D and 3D xml mesh and case setup writing has been implemented within [CfdWorkbench](https://github.com/qingfengxia/Cfd), this feature has yet been push to FreeCAD master.
- 
+
 Meanwhile, FreeCAD developer *joha2* has added mesh export function in FemWorkbench, once the boundary mesh can be exported, case setup for fenics solver will be write in FreeCAD workbench.
 
 
-### 3. Coupling of multiple solvers (implemented in 2018, not yet fully tested)
+###  Coupling of multiple solvers (implemented in 2018, not yet fully tested)
 
 Fluid-structure interaction coupling has a initial implementation in segregate coupling mode, see engine seal FSI simulation:
 ![2D FSI simulation of labyrinth seal](doc/fsi_velmag.mp4)
 
 Tight coupling of all physical fields is under design, target on thermal modelling of complicated systems like bearing, motor, etc.
 
-### 4. Coupling with external solvers OpenFOAM (some work has been done, but yet completed, scheduled to 2019)
+### Coupling with external solvers OpenFOAM (some work has been done, but yet completed, scheduled to 2019)
 
 VTK is the data exchange format for one-way coupling from OpenFOAM to FenicsSolver, from Foam to VTK and VTK to Foam (mesh and internal field data files)
 Two-way coupling should be implemented with the multiphysics coupling library [preCICE](https://github.com/precice/precice)
@@ -130,23 +156,19 @@ Two-way coupling should be implemented with the multiphysics coupling library [p
 a video/presentation of my *13th OpenFOAM Workshop* presentation can be found here:
 [Coupling OpenFOAM with FeniCS for multiphysis simulation](https://www.iesensor.com/blog/2018/06/25/coupling-openfoam-with-fenics-for-multiphysis-simulation-openfoam-workshop-13-presentation/)
 
-### 5. Update code to be compatible with Fenics 2019.1 on Python3 (2019)
+###  Update code to be compatible with Fenics 2019.1 on Python3 (2019)
 
-### 6. Coupling with electomagnetic, structural and thermal simulation (2019)
+almost done
+
+### Coupling with electomagnetic, structural and thermal simulation (2019)
 
 #### thermal-elastic-plastic coupling
 #### pip packaging and instllation guide
 #### Travis CI integration
 
-## To cite this code
+### Update API for Fenics-X (2020)
 
-My journal papers using this code
-1. [Quasi-static modelling for high speed metal cutting](), paper submitted, source code has been uploaded to <https://github.com/qingfengxia/quasi_static_metal_cutting>
-2. [Quasi-static thermal modelling of multi-scale sliding contact for unlubricated brush seal materials](http://proceedings.asmedigitalcollection.asme.org/proceeding.aspx?articleid=2701103), now accepted to "ASME Journal of Gas Turbine and Power"
 
-## Acknowledgement
-
-Thanks for my family members' (esp, Mrs J Wang) understanding and support, so I can work at home.
 
 
 
