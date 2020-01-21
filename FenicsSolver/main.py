@@ -33,7 +33,7 @@ python2 and python3 compatible
 if sys.version_info[0] >= 3:
     unicode = str
 
-_encoding = 'ascii'
+_encoding = 'utf8'
 def _decode_list(data):
     rv = []
     for item in data:
@@ -68,7 +68,8 @@ def load_settings(case_input):
         settings = case_input
     elif os.path.exists(case_input):
         s = open(case_input, 'r').read()
-        settings = json.loads(s, object_hook=_decode_dict)
+        settings = json.loads(s)  # object_hook=_decode_dict
+        print(settings)
     else:
         raise TypeError('{} is not supported by Fenics as case input, only path string or dict'.format(type(case_input)))
     return settings
@@ -77,15 +78,15 @@ def main(case_input):
     settings = load_settings(case_input)
     solver_name = settings['solver_name']
     if solver_name == "CoupledNavierStokesSolver":
-        import CoupledNavierStokesSolver
+        from . import CoupledNavierStokesSolver
         solver = CoupledNavierStokesSolver.CoupledNavierStokesSolver(settings)
         solver.solve()
     elif solver_name == "ScalarTransportSolver":
-        import ScalarTransportSolver
+        from . import ScalarTransportSolver
         solver = ScalarTransportSolver.ScalarTransportSolver(settings)
         solver.solve()
     elif solver_name == "LinearElasticitySolver":
-        import LinearElasticitySolver
+        from . import LinearElasticitySolver
         solver = LinearElasticitySolver.LinearElasticitySolver(settings)
         solver.solve()
     else:

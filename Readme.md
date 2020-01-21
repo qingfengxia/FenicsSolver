@@ -5,34 +5,36 @@ This is a sub-projects of [intelligient engineering design](https://qingfengxia.
 by Qingfeng Xia, 2017~
 
 This is derived from my personal independent research, although I am not yet financially independent in the University of Oxford. This solver has features beyond commercial commercial solvers, in its capability to solve multibody, multi-physics, multiscale and reduced-order nonlinear problems.
+
 This software project is an essential part of my research ambition in *Measurement and modelling at extreme conditions* and *Automated and intelligent engineering design*.
 
 ![Schematic of automated engineering design pipeline](https://forum.freecadweb.org/download/file.php?id=73587)
 
-> **Note**   Fenics-X, the next generation Fenics, is expected in 2020. There would API change. 
+> **Note**   Fenics-X, the next generation Fenics, is expected in 2020. The API change in FenicsX should not affect FenicsSolver's json input format. If the mesh input format can support complicate boundary mesh, the previous effort of GUI inside FreeCAD would be more useful to solve more realistic engineering problem.  I am investigating a standard solver input format, to enable coupling with other multi-physics solver. 
 
 ## License
 
-LGPL licensed as [FreeCAD]<https://github.com/FreeCAD/FreeCAD> and [fenics-project]<https://fenicsproject.org/>
+LGPL licensed as [FreeCAD](https://github.com/FreeCAD/FreeCAD) and [fenics-project](https://fenicsproject.org/)
 
 ## Screenshot
+
+There has been some effort to give a GUI for setup FenicsSolver in [FreeCAD's CFD module](https://github.com/qingfengxia/Cfd) Features include boundary condition selection and setup in GUI,  mesh and FenicsSolver input generation, but it is not a top priority in regarding research. 
 
 ![FenicsSolver as a FEM solver in CfdWorkbench of FreeCAD](FenicsSolver_FreeCAD.png?raw=true "FenicsSolver as a CFD solver in CfdWorkbench of FreeCAD")
 
 ## Description
 
-A set of multi-physics FEM solvers based on Fenics with GUI support(via integration Fenics into FreeCAD FemWorkbench and CfdWorkbench),
-focusing on multi-body, reduced-order nonlinear problem and mutlti-solver coupling.It functions like COMSOL or Moose, but it is free and it is made of Python.
+A set of multi-physics FEM solvers based on Fenics with GUI support(via integration Fenics into FreeCAD FemWorkbench and CfdWorkbench), focusing on multi-body, reduced-order nonlinear problem and mutlti-solver coupling.It functions like COMSOL or Moose, but it is free and it is made of Python.
 
 + Solvers implemented:
-  - ScalarTransport (heat transfer, mass transfer, electric potential, etc)
-  - Navier Stokes incompressible laminar flow, 
-  - linear elasticity, nonlinear (hyperelastic) elasticity, large deformation, plasticity
+  - Scalar Transport (heat transfer, mass transfer, electric potential, etc)
+  - Naiver Stokes incompressible laminar flow, 
+  - linear elasticity, nonlinear (hyper-elastic) elasticity, large deformation, plasticity
 
 + Solvers under development:
   - scalar transport using DG
   - viscoelastic
-  - Navier Stokes compressible laminar flow 
+  - Naiver Stokes compressible laminar flow 
   - Maxwell electromagnetics
   - drift-diffusion (plasma and semiconductor)
   - wave propagation
@@ -163,7 +165,7 @@ almost done
 ### Coupling with electomagnetic, structural and thermal simulation (2019)
 
 #### thermal-elastic-plastic coupling
-#### pip packaging and instllation guide
+#### pip packaging and installation guide
 #### Travis CI integration
 
 ### Update API for Fenics-X (2020)

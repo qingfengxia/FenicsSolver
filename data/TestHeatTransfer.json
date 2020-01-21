@@ -1,25 +1,30 @@
 {
-"_comment": "SolverBase has the default solver settings",
-"solver_name": "ScalerEquationSolver",
-"scalar_name": "temperature",
-"case_folder": "/tmp/", 
-"case_name": "TestHT", 
-"mesh": "../data/mesh.xml",
-"case_file": "../data/TestHeatTransfer.json",
-"fe_degree": 1,
-"fe_family": "CG",
-"periodic_boundary": null, 
-"material": {"kinematic_viscosity": 1, "name": "oil", "density": 1000, "specific_heat_capacity": 500, "thermal_conductivity": 20}, 
-"boundary_conditions": 
-{
-"inlet":{"name": "Inlet", "variable": "temperature", "value": 350, "boundary_id": 1, "type": "Dirichlet"}, 
-"outlet": {"name": "Outlet", "variable": "temperature", "value": 300, "boundary_id": 2, "type": "Dirichlet"}
-},
-"initial_values": {"temperature": 293},
-"solver_settings": 
-{
-"transient_settings": {"maximum_interation": 100, "transient": false, "starting_time": 0, "time_step": 0.01, "ending_time": 0.03},
-"reference_values": {"temperature": 293},
-"solver_parameters": {"relative_tolerance": 1e-7, "maximum_iterations": 500,  "monitor_convergence": true}
-}
+    "_comment": "SolverBase has the default solver settings",
+    "solver_name": "ScalarTransportSolver",
+    "scalar_name": "temperature",
+    "case_folder": "/tmp/", 
+    "case_name": "TestHT", 
+    "mesh": "../data/mesh.xml",
+    "case_file": "../data/TestHeatTransfer.json",
+    "fe_degree": 1,
+    "fe_family": "CG",
+    "periodic_boundary": null, 
+    "material": {
+                    "kinematic_viscosity": 1, 
+                    "name": "oil", "density": 1000, 
+                    "specific_heat_capacity": 500, 
+                    "thermal_conductivity": 20
+                    }, 
+    "boundary_conditions": 
+    {
+        "inlet":{"name": "Inlet", "variable": "temperature", "value": 350, "boundary_id": 1, "type": "Dirichlet"}, 
+        "outlet": {"name": "Outlet", "variable": "temperature", "value": 300, "boundary_id": 2, "type": "Dirichlet"}
+    },
+    "initial_values": {"temperature": 293},
+    "solver_settings": 
+    {
+        "transient_settings": {"maximum_interation": 100, "transient": false, "starting_time": 0, "time_step": 0.01, "ending_time": 0.03},
+        "reference_values": {"temperature": 293},
+        "solver_parameters": {"relative_tolerance": 1e-7, "maximum_iterations": 500,  "monitor_convergence": true}
+    }
 }
