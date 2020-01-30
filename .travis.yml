@@ -1,13 +1,23 @@
-dist: bionic
+#dist: bionic
 #dist: xenial is not supported before Nov 2018, python2 is the default for trusty
 #dist: bionic is now available
 # https://blog.travis-ci.com/2018-11-08-xenial-release
 # docker is another way to test out this FenicsSolver
 
+
 sudo: required
 language: python
-python:
-  - '3.6'
+jobs:
+  include:
+    - os: linux
+      dist: bionic
+      python: 3.6
+      env: TOXENV=DOLFIN
+
+    - os: linux
+      dist: xenial
+      python: 2.7  #
+      env: TOXENV=DOLFIN  # later  using python 3.7 for dolfinX
 
 #services:
 #  - docker
@@ -20,17 +30,16 @@ python:
 before_install:
   - sudo add-apt-repository -y ppa:fenics-packages/fenics
   - sudo apt-get -q update
-  - sudo apt-get -y install python3-dolfin fenics
 
+# shared by all env matrix
 install:
 - sudo apt-get update -q
 - if [[ $TRAVIS_PYTHON_VERSION == '2.7' ]]; then travis_retry sudo apt-get install
-  -y python-matplotlib python-numpy git doxygen; fi
+  -y python-matplotlib python-numpy git doxygen python-dolfin fenics; fi
 - if [[ $TRAVIS_PYTHON_VERSION == '3.6' ]]; then travis_retry sudo apt-get install
-  -y python3-matplotlib python3-numpy git doxygen; fi
-- echo "current working dir is $(pwd)"  && ls
+  -y python3-matplotlib python3-numpy git doxygen python3-dolfin fenics; fi
+- echo "current working dir during install stage is $(pwd)"  && ls
 
-# qingfengxia/FenicsSolver
 # already git clone this repo: git clone --depth=50 --branch=master https://github.com/qingfengxia/FenicsSolver.git qingfengxia/FenicsSolver
 # cd into this repo
 
@@ -43,21 +52,27 @@ install:
 ## output of docker, show the log
 #- docker logs
 
+# in travis, python will be set to version you specified above
 script:
 # test the installed fenics  packages
-- python -c 'import dolfin; print("Fenics version", dolfin.__version__)'
+- if [ ${TOXENV} = 'DOLFIN' ]; then python -c 'import dolfin; print("Fenics version", dolfin.__version__)'; fi
+- if [ ${TOXENV} = 'DOLFINX' ]; then python -c 'import dolfin; print("Fenics version", dolfin.__version__)'; fi
 - echo "current working dir is $(pwd)"
+# test without installation
 - export PYTHONPATH=$(pwd):$PYTHONPATH
-- if  [ -d 'examples' ] ; then cd examples && python run_all_tests.py; fi
-- doxygen Doxyfile
+- if  [ -d 'examples' ] ; then cd examples && python run_all_tests.py && cd .. ; fi
+- if  [ -d 'data' ] ; then cd data && python -m FenicsSolver TestHeatTransfer.json && cd .. ; fi
+#- doxygen Doxyfile
+
 # build the wheel,   skip_cleanup: true
-- cd .. && python setup.py bdist_wheel
+- python setup.py bdist_wheel
+# TODO: github can host package
 
 # deploy to multiple providers are possible, make a list
-deploy:
-  - provider: pages
-  skip_cleanup: true
-  local_dir: docs/html
-  github_token: $GH_REPO_TOKEN
-  on:
-    branch: hg_pages
+#~ deploy:
+  #~ - provider: pages
+  #~ skip_cleanup: true
+  #~ local_dir: docs/html
+  #~ github_token: $GH_REPO_TOKEN
+  #~ on:
+    #~ branch: hg_pages

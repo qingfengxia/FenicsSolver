@@ -1,5 +1,7 @@
 # Multiphysics FEM solver based on Fenics
 
+[![Build Status](https://travis-ci.org/qingfengxia/FenicsSolver.svg?branch=master)](https://travis-ci.org/qingfengxia/FenicsSolver.svg) [![Coverage Status](https://coveralls.io/repos/github/qingfengxia/FenicsSolver.svg/badge.svg?branch=master)](https://coveralls.io/github/qingfengxia/FenicsSolver.svg?branch=master)
+
 This is a sub-projects of [intelligient engineering design](https://qingfengxia.github.io/)
 
 by Qingfeng Xia, 2017~
@@ -10,7 +12,7 @@ This software project is an essential part of my research ambition in *Measureme
 
 ![Schematic of automated engineering design pipeline](https://forum.freecadweb.org/download/file.php?id=73587)
 
-> **Note**   Fenics-X, the next generation Fenics, is expected in 2020. The API change in FenicsX should not affect FenicsSolver's json input format. If the mesh input format can support complicate boundary mesh, the previous effort of GUI inside FreeCAD would be more useful to solve more realistic engineering problem.  I am investigating a standard solver input format, to enable coupling with other multi-physics solver. 
+> **Note**   Fenics-X, the next generation Fenics, is expected in 2020. The API change in FenicsX should not affect FenicsSolver's json input format. If the mesh input format can support complicate boundary mesh, the previous effort of GUI inside FreeCAD would be more useful to solve more realistic engineering problem.  I am investigating a standard solver input format, to enable coupling with other multi-physics solver.
 
 ## License
 
@@ -18,7 +20,7 @@ LGPL licensed as [FreeCAD](https://github.com/FreeCAD/FreeCAD) and [fenics-proje
 
 ## Screenshot
 
-There has been some effort to give a GUI for setup FenicsSolver in [FreeCAD's CFD module](https://github.com/qingfengxia/Cfd) Features include boundary condition selection and setup in GUI,  mesh and FenicsSolver input generation, but it is not a top priority in regarding research. 
+There has been some effort to give a GUI for setup FenicsSolver in [FreeCAD's CFD module](https://github.com/qingfengxia/Cfd) Features include boundary condition selection and setup in GUI,  mesh and FenicsSolver input generation, but it is not a top priority in regarding research.
 
 ![FenicsSolver as a FEM solver in CfdWorkbench of FreeCAD](FenicsSolver_FreeCAD.png?raw=true "FenicsSolver as a CFD solver in CfdWorkbench of FreeCAD")
 
@@ -28,13 +30,13 @@ A set of multi-physics FEM solvers based on Fenics with GUI support(via integrat
 
 + Solvers implemented:
   - Scalar Transport (heat transfer, mass transfer, electric potential, etc)
-  - Naiver Stokes incompressible laminar flow, 
+  - Naiver Stokes incompressible laminar flow,
   - linear elasticity, nonlinear (hyper-elastic) elasticity, large deformation, plasticity
 
 + Solvers under development:
   - scalar transport using DG
   - viscoelastic
-  - Naiver Stokes compressible laminar flow 
+  - Naiver Stokes compressible laminar flow
   - Maxwell electromagnetics
   - drift-diffusion (plasma and semiconductor)
   - wave propagation
@@ -62,7 +64,7 @@ sudo apt-get install fenics python-dolfin
 #sudo apt-get install fenics python3-dolfin
 ```
 
-copy this folder to any place on the python search path (PYTHON_PATH), assuming fenics has been installed. 
+copy this folder to any place on the python search path (PYTHON_PATH), assuming fenics has been installed.
 
 ```
 git clone https://github.com/qingfengxia/FenicsSolver.git
@@ -105,10 +107,10 @@ This package is under heavy refactoring, considered alpha.
 
 This package is python 2 and python 3 compatibe.
 Fenics version 2017.1 tested is on Ubuntu16.04 and python 2.7 with/without FreeCAD 0.17 dev.
-Fenics version 2017.2 tested is on Ubuntu16.04 and Python 3, without FreeCAD GUI. 
-Fenics version 2019.1 tested is on Ubuntu18.04 and Python 3, with FreeCAD 0.19 dev. 
+Fenics version 2017.2 tested is on Ubuntu16.04 and Python 3, without FreeCAD GUI.
+Fenics version 2019.1 tested is on Ubuntu18.04 and Python 3, with FreeCAD 0.19 dev.
 
-Run the python script files with "test_" suffix, which are gtest compatible. 
+Run the python script files with "test_" suffix, which are gtest compatible.
 
 ## Documentation:
 
@@ -132,7 +134,7 @@ see also my presentation at Fenics 18: [Automated Mechanical Engineering Design 
 
 ### Initial demonstration (Sep 2017)
 
-A series of object oriented solvers: *ScalerEquationSolver*, *CoupledNavierStokesSolver* and *LinearElasticitySolver*, derived from *BaseSolver*, while a few other are under active development. 
+A series of object oriented solvers: *ScalerEquationSolver*, *CoupledNavierStokesSolver* and *LinearElasticitySolver*, derived from *BaseSolver*, while a few other are under active development.
 
 Case setup: json file format is the text case setup file, mapping directly to and from python dict data structure.
 
