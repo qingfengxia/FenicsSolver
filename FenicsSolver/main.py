@@ -102,4 +102,6 @@ if __name__ == "__main__":
         #  must start this solver in FenicsSolver folder
 
     else:
-        main(sys.argv[1])
+        config_file = sys.argv[1]
+        print("run FenicsSolver with config file", config_file)
+        main(config_file)

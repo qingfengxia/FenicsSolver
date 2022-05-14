@@ -33,12 +33,17 @@ interactively = is_interactive()
 from dolfin import *
 from FenicsSolver import SolverBase
 
-#print("dolfin version()", dolfin.__version__)  #
+
 import dolfin
 ver = [int(s) for s in dolfin.__version__.split('.')]
+print("Test CFD soler with dolfin version()", dolfin.__version__) 
 if ver[0]<2018:
     UserExpression = Expression
-
+    from mshr import Box, Rectangle, generate_mesh
+else:
+    print('mshr module is not included in fenics version: ', dolfin.__version__)
+    print('skip the test since elbow mesh can not been made')
+    exit()
 
 
 transient = False
@@ -51,7 +56,6 @@ length_scale = 1
 max_vel=1 * length_scale
 
 def setup(using_elbow = True, using_3D = False, compressible=False):
-    from mshr import Box, Rectangle, generate_mesh
     zero_vel = Constant((0,0))
     if using_elbow:
         x_min, x_max = 0 * length_scale, 2*length_scale

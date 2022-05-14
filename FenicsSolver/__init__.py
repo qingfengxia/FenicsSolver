@@ -9,12 +9,5 @@ __author__ = 'Qingfeng Xia'
 import sys
 from .main import main
 
-#print(sys.argv)
-if len(sys.argv) < 2:
-    print("Not enough input argument, Usage: `python - FenicsSolver case_input` \n  to run simulation")
-    #  must start this solver in FenicsSolver folder
-
-else:
-    config_file = sys.argv[1]
-    print("run FenicsSolver with config file", config_file)
-    main(config_file)
+if len(sys.argv) >= 2:
+    main(sys.argv)
